@@ -1,0 +1,17 @@
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Java / Maven / Gradle build outputs
+target/
+build/
+.gradle/
+out/
+
+# Logs
+*.log
+
