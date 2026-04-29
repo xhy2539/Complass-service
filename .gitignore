@@ -15,3 +15,28 @@ out/
 # Logs
 *.log
 
+# Python
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.coverage
+.venv/
+venv/
+env/
+
+# Test artifacts
+.pytest_cache/
+.coverage.*
+coverage.xml
+htmlcov/
+test-results/
+test-results.xml
+pytest*.xml
+junit*.xml
+
+# Local env and runtime files
+.env
+*.db
+*.sqlite
+*.sqlite3
+
