@@ -1,9 +1,25 @@
 """应用启动入口，负责创建 FastAPI 实例并挂载基础路由。"""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer
 
 from app.api.v1.contract_review_api import contract_review_api_router
 from app.core.complass_service_settings import get_complass_service_settings
+from app.models.database_connection import init_db
+
+
+# 全局安全依赖，API 文档中会显示认证组件
+security = HTTPBearer()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理，启动时初始化数据库。"""
+    init_db()  # 启动时创建所有表
+    yield
 
 
 def create_app() -> FastAPI:
@@ -13,7 +29,18 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         description="合规罗盘 V0 后端服务",
+        lifespan=lifespan
     )
+
+    # 配置 CORS，允许前端开发服务器访问
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     application.include_router(contract_review_api_router, prefix="/api/v1")
 
     @application.get("/health")
