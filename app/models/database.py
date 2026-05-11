@@ -248,6 +248,9 @@ class RiskPoint(Base):
     # 影响程度（新增）
     impact = Column(Text, nullable=True)  # 如：可能导致资金损失、权益受损等
 
+    # Coze 可替换条款文本
+    replace_text = Column(Text, nullable=True)
+
     # 原文位置信息（用于前端高亮定位）
     position = Column(JSON, nullable=True)  # {"paragraph_index": 0, "char_offset_start": 100, "char_offset_end": 200}
     original_text = Column(Text, nullable=True)  # 风险点所在原文
@@ -284,6 +287,7 @@ class RiskPoint(Base):
             "category": self.category,
             "evidence": self.evidence,
             "impact": self.impact,
+            "replace_text": self.replace_text,
             "position": self.position,
             "original_text": self.original_text,
             "status": self.status.value if self.status else None,

@@ -181,6 +181,7 @@ CREATE TABLE `risk_points` (
   `category` varchar(50) DEFAULT NULL,
   `evidence` text,
   `impact` text,
+  `replace_text` text COMMENT 'Coze返回的可替换修改文本',
   `confirmed_by_user_id` varchar(36) DEFAULT NULL,
   `review_comment` text,
   `source` varchar(20) DEFAULT 'coze',

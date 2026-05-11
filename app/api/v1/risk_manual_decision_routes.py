@@ -15,9 +15,7 @@ from app.models.database_connection import get_db
 from app.schemas.review import (
     RiskStatusUpdateRequest,
     RiskStatusUpdateResponse,
-    RiskListResponse,
-    RiskPointSchema,
-    RiskStatsSchema
+    RiskPointSchema
 )
 
 risk_manual_decision_router = APIRouter(prefix="/risks", tags=["风险点人工确认"])

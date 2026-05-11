@@ -16,7 +16,7 @@ from app.models.database import (
 from app.models.database_connection import get_db
 from app.schemas.review import (
     ReviewTaskSchema, ReviewTaskCreateResponse, ReviewTaskQueryResponse,
-    RiskPointSchema, RiskStatsSchema
+    RiskPointSchema
 )
 from app.services.document_parser import DocumentParseError, DocumentParser
 
@@ -313,15 +313,11 @@ async def create_review_task(
         try:
             from app.services.coze_service import get_coze_service
             coze_service = get_coze_service()
-            coze_input = {
-                "task_type": "contract_review",
-                "file_name": parse_result.file_name,
-                "file_type": parse_result.file_type,
-                "text": parse_result.sanitized_text,
-                "char_count": parse_result.char_count,
-                "paragraph_count": len(parse_result.paragraphs)
-            }
-            coze_result = await coze_service.call_workflow(coze_input)
+            coze_result = await coze_service.review_contract_file(
+                content=content,
+                filename=parse_result.file_name,
+                content_type=file.content_type,
+            )
 
             # 更新任务结果
             task.overall_conclusion = coze_result.get("overall_conclusion", "")
@@ -351,8 +347,9 @@ async def create_review_task(
                     evidence=rp_data.get("evidence"),
                     impact=rp_data.get("impact"),
                     suggestion=rp_data.get("suggestion", ""),
+                    replace_text=rp_data.get("replace_text"),
                     position=position,
-                    original_text=original_text,
+                    original_text=rp_data.get("original_text") or original_text,
                     status=RiskStatus.PENDING,
                     source="coze"
                 )

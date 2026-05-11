@@ -12,7 +12,6 @@ from app.models.database import (
     ComparisonTask, ComparisonRiskPoint, TaskStatus, RiskLevel, RiskStatus, User
 )
 from app.models.database_connection import get_db
-from app.schemas.comparison import ComparisonTaskSchema
 from app.services.document_parser import DocumentParseError, DocumentParser
 from app.services.text_diff import sentence_diff_with_positions, summarize_diff
 from app.services.coze_service import CozeServiceError, get_coze_service
@@ -27,7 +26,7 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
-def validate_file(file: UploadFile, allow_empty: bool = False) -> None:
+def validate_file(file: UploadFile) -> None:
     """验证文件是否有效。"""
     if not file.filename:
         raise HTTPException(status_code=400, detail="文件名不能为空")
@@ -192,6 +191,14 @@ async def create_comparison_task(
 
             task.coze_enhanced = coze_result.get("enhanced", [])
             task.total_risks = coze_result.get("total_risks", 0)
+            coze_stats = coze_result.get("stats") or {}
+            if coze_stats:
+                task.diff_stats = {
+                    "total": sum(coze_stats.values()),
+                    "added": coze_stats.get("added", 0),
+                    "deleted": coze_stats.get("deleted", 0),
+                    "modified": coze_stats.get("modified", 0)
+                }
 
             # 创建比对风险点
             for enhanced in coze_result.get("enhanced", []):
@@ -207,8 +214,8 @@ async def create_comparison_task(
                     id=_uuid(),
                     comparison_task_id=task_id,
                     change_type=enhanced.get("change_type", "modified"),
-                    old_text=diffs[diff_index].old_text if diff_index is not None else None,
-                    new_text=diffs[diff_index].new_text if diff_index is not None else enhanced.get("original"),
+                    old_text=diffs[diff_index].old_text if diff_index is not None else enhanced.get("old"),
+                    new_text=diffs[diff_index].new_text if diff_index is not None else enhanced.get("new") or enhanced.get("original"),
                     similarity=int(diffs[diff_index].similarity * 100) if diff_index is not None else 0,
                     summary=enhanced.get("summary", ""),
                     risk_level=RiskLevel(enhanced.get("risk_level", "low")),

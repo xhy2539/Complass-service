@@ -14,9 +14,13 @@ class ComplassServiceSettings(BaseSettings):
     app_env: str = "local"
     database_url: str = "mysql+pymysql://root:password@localhost:3306/complass?charset=utf8mb4"
     coze_api_base_url: str = "https://api.coze.cn"
+    coze_access_token: str = ""
     coze_api_token: str = ""
     coze_workflow_id: str = ""
-    coze_mock_enabled: bool = True
+    coze_comparison_workflow_id: str = "7634842444869861416"
+    coze_review_workflow_id: str = "7636289402251198473"
+    coze_workflow_timeout_seconds: float = 120.0
+    coze_upload_timeout_seconds: float = 120.0
     max_upload_size_mb: int = 20
 
     # JWT 配置

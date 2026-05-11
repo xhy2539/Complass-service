@@ -1,4 +1,4 @@
-"""合同审查 V1 API 聚合入口，集中挂载当前业务路由占位。"""
+"""合同审查 V1 API 聚合入口，集中挂载当前业务路由。"""
 
 from fastapi import APIRouter
 

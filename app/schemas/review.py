@@ -50,6 +50,7 @@ class RiskPointSchema(BaseModel):
     category: Optional[str] = None  # 风险分类
     evidence: Optional[str] = None  # 证据材料
     impact: Optional[str] = None  # 影响程度
+    replace_text: Optional[str] = None  # Coze 返回的可替换修改文本
     # 位置和原文
     position: Optional[dict] = None  # {"paragraph_index": 0, "char_offset_start": 100}
     original_text: Optional[str] = None

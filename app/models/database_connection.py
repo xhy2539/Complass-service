@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 from typing import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.complass_service_settings import get_complass_service_settings
@@ -27,6 +27,19 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db() -> None:
     """初始化数据库，创建所有表。"""
     Base.metadata.create_all(bind=engine)
+    _ensure_schema_updates()
+
+
+def _ensure_schema_updates() -> None:
+    """补齐轻量字段迁移，避免已有开发库缺少新增列。"""
+    inspector = inspect(engine)
+    if "risk_points" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("risk_points")}
+    if "replace_text" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE risk_points ADD COLUMN replace_text TEXT"))
 
 
 def get_db() -> Generator[Session, None, None]:
