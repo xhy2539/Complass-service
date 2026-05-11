@@ -43,7 +43,11 @@ async def analyze_contract_comparison(input_data: ContractComparisonInput) -> Co
         result = await coze_service.call_workflow(coze_service.comparison_workflow_id, parameters)
         normalized = normalize_comparison_workflow_result(result)
         raw_output = normalized.get("raw_output", {})
-        return ContractComparisonOutput(output=raw_output.get("output", {}))
+        output_data = raw_output.get("output", {})
+        # Coze 可能返回空列表而非空字典
+        if not isinstance(output_data, dict):
+            output_data = {}
+        return ContractComparisonOutput(output=output_data)
 
     except CozeServiceError as e:
         raise HTTPException(status_code=502, detail=f"Coze 服务调用失败: {e}")
