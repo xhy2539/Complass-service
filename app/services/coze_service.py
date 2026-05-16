@@ -36,11 +36,21 @@ def map_document_change_type(value: str | None) -> str:
     return "modified"
 
 
-def build_comparison_workflow_input(old_text: str, new_text: str) -> dict[str, str]:
-    """构建合同比对 Coze 工作流输入，字段与 Coze 文档保持一致。"""
+def build_comparison_workflow_input(
+    old_text: str,
+    new_text: str,
+    diff_stats: dict[str, int],
+    diff_texts: list[dict[str, str]],
+    task_type: str = "contract_comparison",
+) -> dict[str, Any]:
+    """构建合同比对 Coze 工作流输入，对齐新版 Coze 文档格式。"""
     return {
-        "old_version_text": old_text,
-        "new_version_text": new_text,
+        "task_type": task_type,
+        "old_text": old_text,
+        "new_text": new_text,
+        "diff_stats": json.dumps(diff_stats, ensure_ascii=False, separators=(",", ":")),
+        "diff_count": str(len(diff_texts)),
+        "diff_texts": json.dumps(diff_texts, ensure_ascii=False, separators=(",", ":")),
     }
 
 
@@ -142,10 +152,11 @@ def normalize_comparison_workflow_result(result: dict[str, Any]) -> dict[str, An
 
 
 def normalize_review_workflow_result(result: dict[str, Any]) -> dict[str, Any]:
-    """将 Coze 合同审查文档输出转换为后端任务和风险点结构。"""
+    """将 Coze 合同审查文档输出（PDF格式）转换为后端任务和风险点结构。"""
     if "risk_points" in result:
         return result
 
+    # PDF 文档字段：agreeCount, highlevelriskCount, lowlevelriskCount (string类型)
     high_count = _to_int(result.get("highlevelriskCount"))
     low_count = _to_int(result.get("lowlevelriskCount"))
     passed_count = _to_int(result.get("agreeCount"))
@@ -154,10 +165,10 @@ def normalize_review_workflow_result(result: dict[str, Any]) -> dict[str, Any]:
     for item in result.get("output") or []:
         risk_points.append({
             "title": item.get("key", ""),
-            "level": map_document_risk_level(item.get("risk")),
+            "level": map_document_risk_level(item.get("risk", "")),
             "reason": item.get("tip", ""),
             "suggestion": item.get("advice", ""),
-            "category": item.get("risk"),
+            "category": item.get("risk", ""),
             "evidence": item.get("content", ""),
             "impact": item.get("tip", ""),
             "original_text": item.get("content", ""),
@@ -297,14 +308,16 @@ class CozeService:
         对 diff 结果进行语义增强。
 
         Args:
-            diff_summary: 差异汇总结果
+            diff_summary: 差异汇总结果，需包含 old_text、new_text、diff_stats、diff_texts
 
         Returns:
             语义增强后的结果
         """
         workflow_input = build_comparison_workflow_input(
-            diff_summary.get("old_text", ""),
-            diff_summary.get("new_text", ""),
+            old_text=diff_summary.get("old_text", ""),
+            new_text=diff_summary.get("new_text", ""),
+            diff_stats=diff_summary.get("diff_stats", {"total": 0, "added": 0, "deleted": 0, "modified": 0}),
+            diff_texts=diff_summary.get("diff_texts", []),
         )
         result = await self.call_workflow(self.comparison_workflow_id, workflow_input)
         return normalize_comparison_workflow_result(result)

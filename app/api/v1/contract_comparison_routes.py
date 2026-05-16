@@ -135,6 +135,19 @@ async def create_comparison_task(
     diffs = sentence_diff_with_positions(old_comparison_data, new_comparison_data)
     summary = summarize_diff(diffs)
 
+    # 构建 Coze 新版格式的 diff_texts
+    diff_texts = []
+    for d in diffs:
+        if d.change_type == "modified":
+            content = f"修改内容：{d.old_text} → {d.new_text}"
+        elif d.change_type == "added":
+            content = f"新增内容：{d.new_text}"
+        elif d.change_type == "deleted":
+            content = f"删除内容：{d.old_text}"
+        else:
+            continue
+        diff_texts.append({"type": d.change_type, "content": content})
+
     # 保存 diff 结果
     task.diff_stats = {
         "total": summary["total"],
@@ -186,7 +199,8 @@ async def create_comparison_task(
             coze_result = await coze_service.enhance_diff_result({
                 "old_text": old_doc.sanitized_text,
                 "new_text": new_doc.sanitized_text,
-                **summary
+                "diff_stats": task.diff_stats,
+                "diff_texts": diff_texts,
             })
 
             task.coze_enhanced = coze_result.get("enhanced", [])
