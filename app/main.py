@@ -1,5 +1,6 @@
 """应用启动入口，负责创建 FastAPI 实例并挂载基础路由。"""
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,6 +11,11 @@ from app.api.v1.contract_review_api import contract_review_api_router
 from app.core.complass_service_settings import get_complass_service_settings
 from app.models.database_connection import init_db
 
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 # 全局安全依赖，API 文档中会显示认证组件
 security = HTTPBearer()

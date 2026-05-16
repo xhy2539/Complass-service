@@ -132,7 +132,7 @@ class DocumentParser:
         char_offset = 0
 
         for match in sentence_pattern.finditer(text):
-            sent_text = match.group().strip()
+            sent_text = match.group()
             if sent_text:
                 sentences.append({
                     "text": sent_text,
@@ -201,7 +201,7 @@ class DocumentParser:
 
                 # 拆分句子
                 for sent_match in re.finditer(r'[^。！？;]+[。！？;]*', text):
-                    sent_text = sent_match.group().strip()
+                    sent_text = sent_match.group()
                     if sent_text:
                         sentences.append({
                             "text": sent_text,
@@ -273,7 +273,7 @@ class DocumentParser:
 
                         # 拆分句子
                         for sent_match in re.finditer(r'[^。！？;]+[。！？;]*', line):
-                            sent_text = sent_match.group().strip()
+                            sent_text = sent_match.group()
                             if sent_text:
                                 sentences.append({
                                     "text": sent_text,
@@ -340,7 +340,7 @@ class DocumentParser:
 
                 # 拆分句子
                 for sent_match in re.finditer(r'[^。！？;]+[。！？;]*', line):
-                    sent_text = sent_match.group().strip()
+                    sent_text = sent_match.group()
                     if sent_text:
                         sentences.append({
                             "text": sent_text,

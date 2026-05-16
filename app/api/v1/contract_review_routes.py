@@ -1,5 +1,6 @@
 """单合同审查路由，提供文件上传、任务创建、解析和风险分析接口。"""
 
+import logging
 import re
 import uuid
 from datetime import datetime
@@ -7,6 +8,8 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.api.v1.auth import get_current_user
 from app.models.database import (
@@ -97,6 +100,70 @@ def extract_keywords(text: str, max_count: int = 5) -> list[str]:
 
     # 返回前 max_count 个
     return keywords[:max_count]
+
+
+def find_best_sentence_match(
+    evidence: str,
+    sentences_info: dict[int, dict]
+) -> Optional[dict]:
+    """
+    查找与风险点证据最匹配的句子。
+
+    Args:
+        evidence: Coze返回的原文/证据
+        sentences_info: 句子信息字典 {index: {text, id, ...}}
+
+    Returns:
+        匹配的句子信息 {id, text, ...} 或 None
+    """
+    if not evidence or not sentences_info:
+        return None
+
+    best_match = None
+    best_score = 0.0
+    best_idx = None
+
+    # 策略1：精确包含匹配
+    for idx, sent_info in sentences_info.items():
+        sent_text = sent_info["text"]
+        if evidence in sent_text or sent_text in evidence:
+            # 如果完全包含，分数很高
+            score = 2.0 if len(evidence) <= len(sent_text) else 1.5
+            if score > best_score:
+                best_score = score
+                best_match = sent_info
+                best_idx = idx
+
+    if best_score >= 1.0:
+        return best_match
+
+    # 策略2：关键词匹配
+    keywords = extract_keywords(evidence)
+    for idx, sent_info in sentences_info.items():
+        sent_text = sent_info["text"]
+        match_count = sum(1 for kw in keywords if kw in sent_text)
+        if match_count > best_score:
+            best_score = match_count
+            best_match = sent_info
+            best_idx = idx
+
+    if best_score >= 1.0:
+        return best_match
+
+    # 策略3：相似度匹配
+    best_similarity = 0.0
+    similarity_match = None
+
+    for idx, sent_info in sentences_info.items():
+        sim = compute_text_similarity(evidence, sent_info["text"])
+        if sim > best_similarity:
+            best_similarity = sim
+            similarity_match = sent_info
+
+    if best_similarity >= 0.3 and best_similarity > best_score:
+        return similarity_match
+
+    return best_match if best_match else None
 
 
 def find_best_paragraph_match(
@@ -229,6 +296,8 @@ async def create_review_task(
     except DocumentParseError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    logger.info(f"[Review] 文件解析完成: {file.filename}, 段落数={len(parse_result.paragraphs)}, 句子数={len(parse_result.sentences)}")
+
     # 创建审查任务
     task_id = _uuid()
     task = ReviewTask(
@@ -285,9 +354,11 @@ async def create_review_task(
         db.add(paragraph)
 
     # 创建句子记录
+    sentences_info = {}
     for idx, s in enumerate(parse_result.sentences):
+        sentence_id = _uuid()
         sentence = Sentence(
-            id=_uuid(),
+            id=sentence_id,
             review_task_id=task_id,
             index=idx,
             text=s.get("text", ""),
@@ -296,6 +367,10 @@ async def create_review_task(
             paragraph_index=s.get("paragraph_index")
         )
         db.add(sentence)
+        sentences_info[idx] = {"text": s.get("text", ""), "id": sentence_id}
+
+    # 立即 flush，确保句子写入数据库，获取真实 ID
+    db.flush()
 
     # 构建段落信息（用于风险点定位）
     paragraphs_info = {
@@ -329,6 +404,8 @@ async def create_review_task(
 
             # 创建风险点记录
             risk_points_data = coze_result.get("risk_points", [])
+            logger.info(f"[Review] Coze返回风险点数: {len(risk_points_data)}")
+
             for rp_data in risk_points_data:
                 # 使用改进的匹配算法定位风险点
                 position, original_text = find_best_paragraph_match(
@@ -337,19 +414,24 @@ async def create_review_task(
                     paragraphs_info=paragraphs_info
                 )
 
+                # 查找最匹配的句子
+                matched_sentence = find_best_sentence_match(
+                    evidence=rp_data.get("evidence", ""),
+                    sentences_info=sentences_info
+                )
+
                 risk_point = RiskPoint(
                     id=_uuid(),
                     review_task_id=task_id,
                     title=rp_data.get("title", ""),
                     level=RiskLevel(rp_data.get("level", "medium")),
-                    category=rp_data.get("category"),
                     reason=rp_data.get("reason", ""),
                     evidence=rp_data.get("evidence"),
                     impact=rp_data.get("impact"),
                     suggestion=rp_data.get("suggestion", ""),
                     replace_text=rp_data.get("replace_text"),
                     position=position,
-                    original_text=rp_data.get("original_text") or original_text,
+                    sentence_id=matched_sentence["id"] if matched_sentence else None,
                     status=RiskStatus.PENDING,
                     source="coze"
                 )

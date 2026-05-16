@@ -1,11 +1,14 @@
 """Coze AI 服务，提供工作流调用、文件上传和结果格式转换。"""
 
 import json
+import logging
 from typing import Any
 
 import httpx
 
 from app.core.complass_service_settings import get_complass_service_settings
+
+logger = logging.getLogger(__name__)
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -156,6 +159,8 @@ def normalize_review_workflow_result(result: dict[str, Any]) -> dict[str, Any]:
     if "risk_points" in result:
         return result
 
+    logger.info(f"[Coze] 原始工作流返回: {json.dumps(result, ensure_ascii=False)[:1000]}")
+
     # PDF 文档字段：agreeCount, highlevelriskCount, lowlevelriskCount (string类型)
     high_count = _to_int(result.get("highlevelriskCount"))
     low_count = _to_int(result.get("lowlevelriskCount"))
@@ -163,17 +168,15 @@ def normalize_review_workflow_result(result: dict[str, Any]) -> dict[str, Any]:
 
     risk_points = []
     for item in result.get("output") or []:
+        logger.info(f"[Coze] 处理风险点 item: {json.dumps(item, ensure_ascii=False)}")
         risk_points.append({
             "title": item.get("key", ""),
             "level": map_document_risk_level(item.get("risk", "")),
             "reason": item.get("tip", ""),
             "suggestion": item.get("advice", ""),
-            "category": item.get("risk", ""),
             "evidence": item.get("content", ""),
             "impact": item.get("tip", ""),
-            "original_text": item.get("content", ""),
             "replace_text": item.get("replace_text", ""),
-            "coze_risk_label": item.get("risk", ""),
         })
 
     return {
@@ -230,6 +233,9 @@ class CozeService:
         url = f"{self.api_base}/v1/workflow/run"
         payload = build_workflow_run_payload(workflow_id, parameters)
 
+        logger.info(f"[Coze] 开始调用工作流: workflow_id={workflow_id}")
+        logger.debug(f"[Coze] 工作流入参: {json.dumps(parameters, ensure_ascii=False)[:500]}")
+
         async with httpx.AsyncClient(timeout=self.settings.coze_workflow_timeout_seconds) as client:
             try:
                 response = await client.post(
@@ -244,7 +250,10 @@ class CozeService:
                 if response.status_code != 200:
                     raise CozeServiceError(f"Coze API 调用失败: {response.status_code} {response.text}")
 
-                return extract_business_data(response.json())
+                result = extract_business_data(response.json())
+                logger.info(f"[Coze] 工作流调用成功")
+                logger.debug(f"[Coze] 工作流返回: {json.dumps(result, ensure_ascii=False)[:500]}")
+                return result
 
             except httpx.HTTPError as e:
                 raise CozeServiceError(f"Coze API 网络错误: {type(e).__name__}: {e!r}")
@@ -258,6 +267,8 @@ class CozeService:
         files = {
             "file": (filename, content, content_type or "application/octet-stream")
         }
+
+        logger.info(f"[Coze] 开始上传文件: {filename}")
 
         async with httpx.AsyncClient(timeout=self.settings.coze_upload_timeout_seconds) as client:
             try:
@@ -278,6 +289,8 @@ class CozeService:
                 file_id = (data.get("data") or {}).get("id")
                 if not file_id:
                     raise CozeServiceError("Coze 文件上传响应缺少 data.id")
+
+                logger.info(f"[Coze] 文件上传成功: {filename} -> file_id={file_id}")
                 return file_id
 
             except httpx.HTTPError as e:
@@ -291,12 +304,14 @@ class CozeService:
     ) -> dict[str, Any]:
         """上传合同文件后按 Coze 文档格式调用合同审查工作流。"""
         file_id = await self.upload_file(content, filename, content_type)
+        logger.info(f"[Coze] 开始审查合同: file_id={file_id}, workflow_id={self.review_workflow_id}")
         try:
             result = await self.call_workflow(
                 self.review_workflow_id,
                 build_review_workflow_input(file_id),
             )
         except CozeServiceError:
+            logger.warning(f"[Coze] JSON格式调用失败，尝试对象格式重试")
             result = await self.call_workflow(
                 self.review_workflow_id,
                 build_review_workflow_object_input(file_id),

@@ -239,21 +239,23 @@ class RiskPoint(Base):
     reason = Column(Text, nullable=True)
     suggestion = Column(Text, nullable=True)
 
-    # 风险分类（新增）
+    # 风险分类
     category = Column(String(50), nullable=True)  # 如：付款条款、违约责任、终止条款、保密条款等
 
-    # 证据材料（新增）
+    # 证据材料
     evidence = Column(Text, nullable=True)  # 引用合同原文作为证据
 
-    # 影响程度（新增）
+    # 影响程度
     impact = Column(Text, nullable=True)  # 如：可能导致资金损失、权益受损等
 
-    # Coze 可替换条款文本
+    # Coze 建议替换文本
     replace_text = Column(Text, nullable=True)
 
     # 原文位置信息（用于前端高亮定位）
     position = Column(JSON, nullable=True)  # {"paragraph_index": 0, "char_offset_start": 100, "char_offset_end": 200}
-    original_text = Column(Text, nullable=True)  # 风险点所在原文
+
+    # 关联句子（一个风险点对应一个句子）
+    sentence_id = Column(String(36), ForeignKey("sentences.id"), nullable=True, index=True)
 
     # 状态
     status = Column(SQLEnum(RiskStatus), default=RiskStatus.PENDING, nullable=False)
@@ -264,16 +266,16 @@ class RiskPoint(Base):
     confirmed_by = Column(String(100), nullable=True)  # 确认人（兼容字段，仅作备份）
     ignore_reason = Column(Text, nullable=True)  # 忽略原因
 
-    # 人工复核备注（新增）
+    # 人工复核备注
     review_comment = Column(Text, nullable=True)
 
-    # 来源标识（新增）
+    # 来源标识
     source = Column(String(20), default="coze")  # 来源：coze=AI分析, manual=人工标记
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    # 关联审查任务
+    # 关联
     review_task = relationship("ReviewTask", back_populates="risk_points")
 
     def to_dict(self) -> dict:
@@ -289,7 +291,7 @@ class RiskPoint(Base):
             "impact": self.impact,
             "replace_text": self.replace_text,
             "position": self.position,
-            "original_text": self.original_text,
+            "sentence_id": self.sentence_id,
             "status": self.status.value if self.status else None,
             "confirmed_at": self.confirmed_at.isoformat() if self.confirmed_at else None,
             "confirmed_by_user_id": self.confirmed_by_user_id,
