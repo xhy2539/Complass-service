@@ -12,41 +12,149 @@
 /*!40103 SET TIME_ZONE='+00:00' */;
 /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
 /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
-/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
-/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES */;
 
 --
--- Table structure for table `comparison_risk_points`
+-- Table structure for table `users`
 --
 
-DROP TABLE IF EXISTS `comparison_risk_points`;
+DROP TABLE IF EXISTS `users`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `comparison_risk_points` (
+CREATE TABLE `users` (
   `id` varchar(36) NOT NULL,
-  `comparison_task_id` varchar(36) NOT NULL,
-  `change_type` varchar(20) NOT NULL,
-  `old_text` text,
-  `new_text` text,
-  `similarity` int DEFAULT NULL,
-  `summary` text,
-  `risk_level` enum('HIGH','MEDIUM','LOW') DEFAULT NULL,
-  `suggestion` text,
-  `old_position` json DEFAULT NULL,
-  `new_position` json DEFAULT NULL,
+  `email` varchar(255) NOT NULL,
+  `nickname` varchar(100) NOT NULL,
+  `hashed_password` varchar(255) NOT NULL,
+  `is_active` tinyint(1) NOT NULL,
+  `is_verified` tinyint(1) NOT NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
-  `category` varchar(50) DEFAULT NULL COMMENT '风险分类',
-  `evidence` text COMMENT '证据材料',
-  `impact` text COMMENT '影响程度',
-  `source` varchar(20) DEFAULT 'coze',
-  `status` varchar(20) NOT NULL DEFAULT 'pending',
-  `confirmed_at` datetime DEFAULT NULL,
-  `confirmed_by_user_id` varchar(36) DEFAULT NULL,
-  `ignore_reason` text,
+  `last_login_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `ix_comparison_risk_points_comparison_task_id` (`comparison_task_id`),
-  CONSTRAINT `comparison_risk_points_ibfk_1` FOREIGN KEY (`comparison_task_id`) REFERENCES `comparison_tasks` (`id`)
+  UNIQUE KEY `ix_users_email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `review_tasks`
+--
+
+DROP TABLE IF EXISTS `review_tasks`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `review_tasks` (
+  `id` varchar(36) NOT NULL,
+  `file_name` varchar(255) NOT NULL,
+  `file_type` varchar(10) NOT NULL,
+  `file_path` varchar(500) DEFAULT NULL,
+  `file_size` int DEFAULT NULL,
+  `text` text,
+  `char_count` int DEFAULT NULL,
+  `page_count` int DEFAULT NULL,
+  `paragraph_count` int DEFAULT NULL,
+  `sentence_count` int DEFAULT NULL,
+  `sanitized_text` text,
+  `paragraphs_json` json DEFAULT NULL,
+  `sentences_json` json DEFAULT NULL,
+  `position_info_json` json DEFAULT NULL,
+  `comparison_data_json` json DEFAULT NULL,
+  `overall_conclusion` text,
+  `risk_summary` json DEFAULT NULL,
+  `suggest_deep_review` tinyint(1) DEFAULT NULL,
+  `coze_message` text,
+  `status` enum('PENDING','PROCESSING','COMPLETED','FAILED') NOT NULL,
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
+  `completed_at` datetime DEFAULT NULL,
+  `user_id` varchar(36) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  CONSTRAINT `review_tasks_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `paragraphs`
+--
+
+DROP TABLE IF EXISTS `paragraphs`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `paragraphs` (
+  `id` varchar(36) NOT NULL,
+  `review_task_id` varchar(36) NOT NULL,
+  `index` int NOT NULL,
+  `text` text,
+  `char_offset_start` int DEFAULT NULL,
+  `char_offset_end` int DEFAULT NULL,
+  `page_number` int DEFAULT NULL,
+  `is_key_clause` tinyint(1) DEFAULT '0',
+  `paragraph_type` varchar(20) DEFAULT 'body',
+  `paragraph_level` int DEFAULT '0',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `review_task_id` (`review_task_id`),
+  CONSTRAINT `paragraphs_ibfk_1` FOREIGN KEY (`review_task_id`) REFERENCES `review_tasks` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sentences`
+--
+
+DROP TABLE IF EXISTS `sentences`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sentences` (
+  `id` varchar(36) NOT NULL,
+  `review_task_id` varchar(36) NOT NULL,
+  `index` int NOT NULL,
+  `text` text,
+  `char_offset_start` int DEFAULT NULL,
+  `char_offset_end` int DEFAULT NULL,
+  `paragraph_index` int DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `review_task_id` (`review_task_id`),
+  CONSTRAINT `sentences_ibfk_1` FOREIGN KEY (`review_task_id`) REFERENCES `review_tasks` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `risk_points`
+--
+
+DROP TABLE IF EXISTS `risk_points`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `risk_points` (
+  `id` varchar(36) NOT NULL,
+  `review_task_id` varchar(36) NOT NULL,
+  `title` varchar(255) NOT NULL,
+  `level` enum('HIGH','MEDIUM','LOW') NOT NULL,
+  `reason` text,
+  `suggestion` text,
+  `position` json DEFAULT NULL,
+  `status` enum('PENDING','CONFIRMED','IGNORED') NOT NULL,
+  `confirmed_at` datetime DEFAULT NULL,
+  `confirmed_by` varchar(100) DEFAULT NULL,
+  `ignore_reason` text,
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
+  `category` varchar(50) DEFAULT NULL,
+  `evidence` text,
+  `impact` text,
+  `replace_text` text COMMENT 'Coze返回的可替换修改文本',
+  `confirmed_by_user_id` varchar(36) DEFAULT NULL,
+  `review_comment` text,
+  `source` varchar(20) DEFAULT 'coze',
+  `sentence_id` varchar(36) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_risk_points_review_task_id` (`review_task_id`),
+  KEY `idx_risk_points_sentence_id` (`sentence_id`),
+  CONSTRAINT `risk_points_ibfk_1` FOREIGN KEY (`review_task_id`) REFERENCES `review_tasks` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -94,146 +202,98 @@ CREATE TABLE `comparison_tasks` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `paragraphs`
+-- Table structure for table `comparison_documents`
 --
 
-DROP TABLE IF EXISTS `paragraphs`;
+DROP TABLE IF EXISTS `comparison_documents`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `paragraphs` (
+CREATE TABLE `comparison_documents` (
   `id` varchar(36) NOT NULL,
-  `review_task_id` varchar(36) NOT NULL,
-  `index` int NOT NULL,
-  `text` text,
-  `char_offset_start` int DEFAULT NULL,
-  `char_offset_end` int DEFAULT NULL,
-  `page_number` int DEFAULT NULL,
-  `is_key_clause` tinyint(1) DEFAULT '0',
-  `paragraph_type` varchar(20) DEFAULT 'body',
-  `paragraph_level` int DEFAULT '0',
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `review_task_id` (`review_task_id`),
-  CONSTRAINT `paragraphs_ibfk_1` FOREIGN KEY (`review_task_id`) REFERENCES `review_tasks` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `review_tasks`
---
-
-DROP TABLE IF EXISTS `review_tasks`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `review_tasks` (
-  `id` varchar(36) NOT NULL,
+  `comparison_task_id` varchar(36) NOT NULL,
+  `version` enum('old','new') NOT NULL COMMENT '合同版本：old=旧合同，new=新合同',
   `file_name` varchar(255) NOT NULL,
   `file_type` varchar(10) NOT NULL,
-  `file_path` varchar(500) DEFAULT NULL,
   `file_size` int DEFAULT NULL,
-  `text` text,
+  `text` text COMMENT '合同纯文本',
   `char_count` int DEFAULT NULL,
   `page_count` int DEFAULT NULL,
   `paragraph_count` int DEFAULT NULL,
   `sentence_count` int DEFAULT NULL,
-  `sanitized_text` text,
-  `paragraphs_json` json DEFAULT NULL,
-  `sentences_json` json DEFAULT NULL,
-  `position_info_json` json DEFAULT NULL,
-  `comparison_data_json` json DEFAULT NULL,
-  `overall_conclusion` text,
-  `risk_summary` json DEFAULT NULL,
-  `suggest_deep_review` tinyint(1) DEFAULT NULL,
-  `coze_message` text,
-  `status` enum('PENDING','PROCESSING','COMPLETED','FAILED') NOT NULL,
-  `created_at` datetime NOT NULL,
-  `updated_at` datetime NOT NULL,
-  `completed_at` datetime DEFAULT NULL,
-  `user_id` varchar(36) DEFAULT NULL,
+  `sanitized_text` text COMMENT '脱敏后文本（用于 AI 输入）',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `user_id` (`user_id`),
-  CONSTRAINT `review_tasks_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  KEY `ix_comparison_documents_task_id` (`comparison_task_id`),
+  KEY `ix_comparison_documents_version` (`comparison_task_id`, `version`),
+  CONSTRAINT `comparison_documents_ibfk_1` FOREIGN KEY (`comparison_task_id`) REFERENCES `comparison_tasks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='对比合同子表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `risk_points`
+-- Table structure for table `comparison_sentences`
 --
 
-DROP TABLE IF EXISTS `risk_points`;
+DROP TABLE IF EXISTS `comparison_sentences`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `risk_points` (
+CREATE TABLE `comparison_sentences` (
   `id` varchar(36) NOT NULL,
-  `review_task_id` varchar(36) NOT NULL,
-  `title` varchar(255) NOT NULL,
-  `level` enum('HIGH','MEDIUM','LOW') NOT NULL,
-  `reason` text,
-  `suggestion` text,
-  `position` json DEFAULT NULL,
-  `original_text` text,
-  `status` enum('PENDING','CONFIRMED','IGNORED') NOT NULL,
-  `confirmed_at` datetime DEFAULT NULL,
-  `confirmed_by` varchar(100) DEFAULT NULL,
-  `ignore_reason` text,
-  `created_at` datetime NOT NULL,
-  `updated_at` datetime NOT NULL,
-  `category` varchar(50) DEFAULT NULL,
-  `evidence` text,
-  `impact` text,
-  `replace_text` text COMMENT 'Coze返回的可替换修改文本',
-  `confirmed_by_user_id` varchar(36) DEFAULT NULL,
-  `review_comment` text,
-  `source` varchar(20) DEFAULT 'coze',
-  PRIMARY KEY (`id`),
-  KEY `ix_risk_points_review_task_id` (`review_task_id`),
-  CONSTRAINT `risk_points_ibfk_1` FOREIGN KEY (`review_task_id`) REFERENCES `review_tasks` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `sentences`
---
-
-DROP TABLE IF EXISTS `sentences`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `sentences` (
-  `id` varchar(36) NOT NULL,
-  `review_task_id` varchar(36) NOT NULL,
-  `index` int NOT NULL,
+  `comparison_document_id` varchar(36) NOT NULL,
+  `index` int NOT NULL COMMENT '句子在合同中的索引',
   `text` text,
-  `char_offset_start` int DEFAULT NULL,
-  `char_offset_end` int DEFAULT NULL,
-  `paragraph_index` int DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `char_offset_start` int DEFAULT NULL COMMENT '句子在文档中的字符起始位置',
+  `char_offset_end` int DEFAULT NULL COMMENT '句子在文档中的字符结束位置',
+  `paragraph_index` int DEFAULT NULL COMMENT '所属段落的索引',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `review_task_id` (`review_task_id`),
-  CONSTRAINT `sentences_ibfk_1` FOREIGN KEY (`review_task_id`) REFERENCES `review_tasks` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  KEY `ix_comparison_sentences_document_id` (`comparison_document_id`),
+  KEY `ix_comparison_sentences_index` (`comparison_document_id`, `index`),
+  CONSTRAINT `comparison_sentences_ibfk_1` FOREIGN KEY (`comparison_document_id`) REFERENCES `comparison_documents` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='对比任务的句子表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `users`
+-- Table structure for table `comparison_risk_points`
 --
 
-DROP TABLE IF EXISTS `users`;
+DROP TABLE IF EXISTS `comparison_risk_points`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `users` (
+CREATE TABLE `comparison_risk_points` (
   `id` varchar(36) NOT NULL,
-  `email` varchar(255) NOT NULL,
-  `nickname` varchar(100) NOT NULL,
-  `hashed_password` varchar(255) NOT NULL,
-  `is_active` tinyint(1) NOT NULL,
-  `is_verified` tinyint(1) NOT NULL,
+  `comparison_task_id` varchar(36) NOT NULL,
+  `change_type` varchar(20) NOT NULL,
+  `old_text` text,
+  `new_text` text,
+  `similarity` int DEFAULT NULL,
+  `summary` text,
+  `risk_level` enum('HIGH','MEDIUM','LOW') DEFAULT NULL,
+  `suggestion` text,
+  `old_position` json DEFAULT NULL,
+  `new_position` json DEFAULT NULL,
+  `old_sentence_id` varchar(36) DEFAULT NULL COMMENT '旧合同句子ID（deleted/modified类型时有值）',
+  `new_sentence_id` varchar(36) DEFAULT NULL COMMENT '新合同句子ID（added/modified类型时有值）',
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
-  `last_login_at` datetime DEFAULT NULL,
+  `category` varchar(50) DEFAULT NULL COMMENT '风险分类',
+  `evidence` text COMMENT '证据材料',
+  `impact` text COMMENT '影响程度',
+  `source` varchar(20) DEFAULT 'coze',
+  `status` varchar(20) NOT NULL DEFAULT 'pending',
+  `confirmed_at` datetime DEFAULT NULL,
+  `confirmed_by_user_id` varchar(36) DEFAULT NULL,
+  `ignore_reason` text,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `ix_users_email` (`email`)
+  KEY `ix_comparison_risk_points_comparison_task_id` (`comparison_task_id`),
+  KEY `ix_comparison_risk_points_old_sentence` (`old_sentence_id`),
+  KEY `ix_comparison_risk_points_new_sentence` (`new_sentence_id`),
+  CONSTRAINT `comparison_risk_points_ibfk_1` FOREIGN KEY (`comparison_task_id`) REFERENCES `comparison_tasks` (`id`),
+  CONSTRAINT `comparison_risk_points_ibfk_2` FOREIGN KEY (`old_sentence_id`) REFERENCES `comparison_sentences` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `comparison_risk_points_ibfk_3` FOREIGN KEY (`new_sentence_id`) REFERENCES `comparison_sentences` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -244,4 +304,4 @@ CREATE TABLE `users` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-05-03 20:58:47
+-- Dump completed on 2026-05-17

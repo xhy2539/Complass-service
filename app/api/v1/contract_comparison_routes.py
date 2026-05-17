@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_user
 from app.models.database import (
-    ComparisonTask, ComparisonRiskPoint, TaskStatus, RiskLevel, RiskStatus, User
+    ComparisonTask, ComparisonDocument, ComparisonSentence, ComparisonRiskPoint,
+    TaskStatus, RiskLevel, RiskStatus, ComparisonDocVersion, User
 )
 from app.models.database_connection import get_db
 from app.services.document_parser import DocumentParseError, DocumentParser
@@ -49,7 +50,7 @@ async def create_comparison_task(
     """
     创建版本比对任务。
 
-    流程：上传两个文件 → 创建任务 → 解析 → diff → Coze增强（如启用）→ 保存结果
+    流程：上传两个文件 → 创建任务 → 解析 → 创建文档和句子记录 → diff → Coze增强（如启用）→ 保存结果
     返回 task_id 供后续查询。
     """
     # 验证文件
@@ -101,7 +102,78 @@ async def create_comparison_task(
 
     db.add(task)
 
-    # 构建旧文档比对数据
+    # 创建旧合同文档记录
+    old_doc_id = _uuid()
+    old_document = ComparisonDocument(
+        id=old_doc_id,
+        comparison_task_id=task_id,
+        version=ComparisonDocVersion.OLD,
+        file_name=old_doc.file_name,
+        file_type=old_doc.file_type,
+        file_size=len(old_content),
+        text=old_doc.text,
+        char_count=old_doc.char_count,
+        page_count=old_doc.page_count,
+        paragraph_count=len(old_doc.paragraphs),
+        sentence_count=len(old_doc.sentences),
+        sanitized_text=old_doc.sanitized_text
+    )
+    db.add(old_document)
+
+    # 创建新合同文档记录
+    new_doc_id = _uuid()
+    new_document = ComparisonDocument(
+        id=new_doc_id,
+        comparison_task_id=task_id,
+        version=ComparisonDocVersion.NEW,
+        file_name=new_doc.file_name,
+        file_type=new_doc.file_type,
+        file_size=len(new_content),
+        text=new_doc.text,
+        char_count=new_doc.char_count,
+        page_count=new_doc.page_count,
+        paragraph_count=len(new_doc.paragraphs),
+        sentence_count=len(new_doc.sentences),
+        sanitized_text=new_doc.sanitized_text
+    )
+    db.add(new_document)
+
+    # 创建旧合同句子记录
+    old_sentences_info = {}
+    for idx, s in enumerate(old_doc.sentences):
+        sentence_id = _uuid()
+        sentence = ComparisonSentence(
+            id=sentence_id,
+            comparison_document_id=old_doc_id,
+            index=idx,
+            text=s.get("text", ""),
+            char_offset_start=s.get("char_offset_start"),
+            char_offset_end=s.get("char_offset_end"),
+            paragraph_index=s.get("paragraph_index")
+        )
+        db.add(sentence)
+        old_sentences_info[idx] = {"id": sentence_id, "text": s.get("text", "")}
+
+    # 创建新合同句子记录
+    new_sentences_info = {}
+    for idx, s in enumerate(new_doc.sentences):
+        sentence_id = _uuid()
+        sentence = ComparisonSentence(
+            id=sentence_id,
+            comparison_document_id=new_doc_id,
+            index=idx,
+            text=s.get("text", ""),
+            char_offset_start=s.get("char_offset_start"),
+            char_offset_end=s.get("char_offset_end"),
+            paragraph_index=s.get("paragraph_index")
+        )
+        db.add(sentence)
+        new_sentences_info[idx] = {"id": sentence_id, "text": s.get("text", "")}
+
+    # 立即 flush，确保句子写入数据库，获取真实 ID
+    db.flush()
+
+    # 构建用于 diff 比对的句子数据
     old_comparison_data = {
         "sentences": [
             {
@@ -116,7 +188,6 @@ async def create_comparison_task(
         "key_clauses": [p for p in old_doc.paragraphs if p.is_key_clause]
     }
 
-    # 构建新文档比对数据
     new_comparison_data = {
         "sentences": [
             {
@@ -216,29 +287,75 @@ async def create_comparison_task(
 
             # 创建比对风险点
             for enhanced in coze_result.get("enhanced", []):
-                # 找到对应的 diff 项
-                diff_index = None
+                # Coze 返回字段: category, change_type, evidence, impact,
+                #               new_quote, old_quote, original, risk_level, suggestion, summary
+                # 找到对应的 diff 项（通过 new_quote/old_quote 匹配）
+                diff_item = None
+                coze_old_quote = enhanced.get("old_quote", "")
+                coze_new_quote = enhanced.get("new_quote", "")
+
                 for d in diffs:
                     if d.change_type == enhanced.get("change_type"):
-                        if enhanced.get("original") in (d.old_text or "") or enhanced.get("original") in (d.new_text or ""):
-                            diff_index = d.index
+                        # 用 Coze 的 old_quote/new_quote 匹配 diff 的文本
+                        if coze_old_quote and coze_old_quote in (d.old_text or ""):
+                            diff_item = d
                             break
+                        if coze_new_quote and coze_new_quote in (d.new_text or ""):
+                            diff_item = d
+                            break
+                        if enhanced.get("original") and (enhanced.get("original") in (d.old_text or "") or enhanced.get("original") in (d.new_text or "")):
+                            diff_item = d
+                            break
+
+                # 根据 diff 类型确定 sentence 外键
+                change_type = enhanced.get("change_type", "modified")
+                old_sentence_id = None
+                new_sentence_id = None
+
+                if diff_item:
+                    if change_type == "deleted":
+                        # deleted: 只有旧合同有句子
+                        for idx, info in old_sentences_info.items():
+                            if info["text"] == diff_item.old_text:
+                                old_sentence_id = info["id"]
+                                break
+                    elif change_type == "added":
+                        # added: 只有新合同有句子
+                        for idx, info in new_sentences_info.items():
+                            if info["text"] == diff_item.new_text:
+                                new_sentence_id = info["id"]
+                                break
+                    else:
+                        # modified: 旧新都有
+                        if diff_item.old_text:
+                            for idx, info in old_sentences_info.items():
+                                if info["text"] == diff_item.old_text:
+                                    old_sentence_id = info["id"]
+                                    break
+                        if diff_item.new_text:
+                            for idx, info in new_sentences_info.items():
+                                if info["text"] == diff_item.new_text:
+                                    new_sentence_id = info["id"]
+                                    break
 
                 risk_point = ComparisonRiskPoint(
                     id=_uuid(),
                     comparison_task_id=task_id,
-                    change_type=enhanced.get("change_type", "modified"),
-                    old_text=diffs[diff_index].old_text if diff_index is not None else enhanced.get("old"),
-                    new_text=diffs[diff_index].new_text if diff_index is not None else enhanced.get("new") or enhanced.get("original"),
-                    similarity=int(diffs[diff_index].similarity * 100) if diff_index is not None else 0,
+                    change_type=change_type,
+                    # 优先用 diff_item 的文本，其次用 Coze 的 old_quote/new_quote
+                    old_text=diff_item.old_text if diff_item else coze_old_quote,
+                    new_text=diff_item.new_text if diff_item else coze_new_quote or enhanced.get("original", ""),
+                    similarity=int(diff_item.similarity * 100) if diff_item else 0,
                     summary=enhanced.get("summary", ""),
                     risk_level=RiskLevel(enhanced.get("risk_level", "low")),
                     category=enhanced.get("category"),
                     evidence=enhanced.get("evidence"),
                     impact=enhanced.get("impact"),
                     suggestion=enhanced.get("suggestion", ""),
-                    old_position=diffs[diff_index].old_position if diff_index is not None else None,
-                    new_position=diffs[diff_index].new_position if diff_index is not None else None,
+                    old_position=diff_item.old_position if diff_item else None,
+                    new_position=diff_item.new_position if diff_item else None,
+                    old_sentence_id=old_sentence_id,
+                    new_sentence_id=new_sentence_id,
                     source="coze"
                 )
                 db.add(risk_point)
@@ -260,14 +377,16 @@ async def create_comparison_task(
             "type": old_doc.file_type,
             "char_count": old_doc.char_count,
             "page_count": old_doc.page_count,
-            "paragraph_count": len(old_doc.paragraphs)
+            "paragraph_count": len(old_doc.paragraphs),
+            "sentence_count": len(old_doc.sentences)
         },
         "new_file": {
             "name": new_doc.file_name,
             "type": new_doc.file_type,
             "char_count": new_doc.char_count,
             "page_count": new_doc.page_count,
-            "paragraph_count": len(new_doc.paragraphs)
+            "paragraph_count": len(new_doc.paragraphs),
+            "sentence_count": len(new_doc.sentences)
         },
         "diff_stats": task.diff_stats
     }
@@ -279,7 +398,7 @@ async def get_comparison_task(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> dict:
-    """查询版本比对任务详情，包括差异列表和风险点。"""
+    """查询版本比对任务详情，包括差异列表、风险点和合同文档信息。"""
     task = db.query(ComparisonTask).filter(
         ComparisonTask.id == task_id,
         ComparisonTask.user_id == current_user.id
@@ -287,6 +406,11 @@ async def get_comparison_task(
 
     if not task:
         raise HTTPException(status_code=404, detail=f"比对任务 {task_id} 不存在或无权访问")
+
+    # 获取合同文档
+    documents = db.query(ComparisonDocument).filter(
+        ComparisonDocument.comparison_task_id == task_id
+    ).all()
 
     # 获取风险点
     risk_points = db.query(ComparisonRiskPoint).filter(
@@ -296,6 +420,7 @@ async def get_comparison_task(
     return {
         "success": True,
         "task": task.to_dict(),
+        "documents": [doc.to_dict() for doc in documents],
         "diff_details": task.diff_details_json,
         "risk_points": [rp.to_dict() for rp in risk_points],
         "coze_enhanced": task.coze_enhanced,

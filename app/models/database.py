@@ -304,6 +304,12 @@ class RiskPoint(Base):
         }
 
 
+class ComparisonDocVersion(str, Enum):
+    """对比合同版本枚举。"""
+    OLD = "old"
+    NEW = "new"
+
+
 class ComparisonTask(Base):
     """版本比对任务表。"""
     __tablename__ = "comparison_tasks"
@@ -350,6 +356,7 @@ class ComparisonTask(Base):
 
     # 关联
     user = relationship("User")
+    documents = relationship("ComparisonDocument", back_populates="comparison_task", cascade="all, delete-orphan")
     risk_points = relationship("ComparisonRiskPoint", back_populates="comparison_task", cascade="all, delete-orphan")
 
     def to_dict(self) -> dict:
@@ -389,6 +396,81 @@ class ComparisonTask(Base):
         }
 
 
+class ComparisonDocument(Base):
+    """对比合同子表，存储比对任务中的两个合同文档。"""
+    __tablename__ = "comparison_documents"
+
+    id = Column(String(36), primary_key=True)  # UUID
+    comparison_task_id = Column(String(36), ForeignKey("comparison_tasks.id"), nullable=False, index=True)
+    version = Column(SQLEnum(ComparisonDocVersion), nullable=False)  # old / new
+
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(10), nullable=False)
+    file_size = Column(Integer, nullable=True)
+
+    text = Column(Text, nullable=True)  # 合同纯文本
+    char_count = Column(Integer, nullable=True)
+    page_count = Column(Integer, nullable=True)
+    paragraph_count = Column(Integer, nullable=True)
+    sentence_count = Column(Integer, nullable=True)
+    sanitized_text = Column(Text, nullable=True)  # 脱敏后文本
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # 关联
+    comparison_task = relationship("ComparisonTask", back_populates="documents")
+    sentences = relationship("ComparisonSentence", back_populates="document", cascade="all, delete-orphan")
+
+    def to_dict(self) -> dict:
+        """转换为字典格式。"""
+        return {
+            "id": self.id,
+            "comparison_task_id": self.comparison_task_id,
+            "version": self.version.value if self.version else None,
+            "file_name": self.file_name,
+            "file_type": self.file_type,
+            "file_size": self.file_size,
+            "char_count": self.char_count,
+            "page_count": self.page_count,
+            "paragraph_count": self.paragraph_count,
+            "sentence_count": self.sentence_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class ComparisonSentence(Base):
+    """对比任务的句子表，存储每个合同的句子级结构。"""
+    __tablename__ = "comparison_sentences"
+
+    id = Column(String(36), primary_key=True)  # UUID
+    comparison_document_id = Column(String(36), ForeignKey("comparison_documents.id"), nullable=False, index=True)
+
+    index = Column(Integer, nullable=False)  # 句子在合同中的索引
+    text = Column(Text, nullable=True)
+    char_offset_start = Column(Integer, nullable=True)  # 字符起始位置
+    char_offset_end = Column(Integer, nullable=True)    # 字符结束位置
+    paragraph_index = Column(Integer, nullable=True)     # 所属段落索引
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # 关联
+    document = relationship("ComparisonDocument", back_populates="sentences")
+
+    def to_dict(self) -> dict:
+        """转换为字典格式。"""
+        return {
+            "id": self.id,
+            "comparison_document_id": self.comparison_document_id,
+            "index": self.index,
+            "text": self.text,
+            "char_offset_start": self.char_offset_start,
+            "char_offset_end": self.char_offset_end,
+            "paragraph_index": self.paragraph_index,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
 class ComparisonRiskPoint(Base):
     """版本比对中的风险点表。"""
     __tablename__ = "comparison_risk_points"
@@ -407,7 +489,7 @@ class ComparisonRiskPoint(Base):
     risk_level = Column(SQLEnum(RiskLevel), nullable=True)
     suggestion = Column(Text, nullable=True)
 
-    # 风险分类（新增）
+    # 风险分类
     category = Column(String(50), nullable=True)
     evidence = Column(Text, nullable=True)  # 证据材料
     impact = Column(Text, nullable=True)  # 影响程度
@@ -415,6 +497,10 @@ class ComparisonRiskPoint(Base):
     # 原文位置
     old_position = Column(JSON, nullable=True)
     new_position = Column(JSON, nullable=True)
+
+    # 句子级定位（新增）
+    old_sentence_id = Column(String(36), ForeignKey("comparison_sentences.id"), nullable=True, index=True)
+    new_sentence_id = Column(String(36), ForeignKey("comparison_sentences.id"), nullable=True, index=True)
 
     # 来源
     source = Column(String(20), default="coze")
@@ -432,6 +518,8 @@ class ComparisonRiskPoint(Base):
 
     # 关联
     comparison_task = relationship("ComparisonTask", back_populates="risk_points")
+    old_sentence = relationship("ComparisonSentence", foreign_keys=[old_sentence_id])
+    new_sentence = relationship("ComparisonSentence", foreign_keys=[new_sentence_id])
 
     def to_dict(self) -> dict:
         """转换为字典格式。"""
@@ -449,6 +537,8 @@ class ComparisonRiskPoint(Base):
             "impact": self.impact,
             "old_position": self.old_position,
             "new_position": self.new_position,
+            "old_sentence_id": self.old_sentence_id,
+            "new_sentence_id": self.new_sentence_id,
             "source": self.source,
             "status": self.status.value if self.status else None,
             "confirmed_at": self.confirmed_at.isoformat() if self.confirmed_at else None,

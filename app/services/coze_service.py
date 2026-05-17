@@ -46,14 +46,11 @@ def build_comparison_workflow_input(
     diff_texts: list[dict[str, str]],
     task_type: str = "contract_comparison",
 ) -> dict[str, Any]:
-    """构建合同比对 Coze 工作流输入，对齐新版 Coze 文档格式。"""
+    """构建合同比对 Coze 工作流输入，对齐 Coze 文档格式。"""
     return {
         "task_type": task_type,
         "old_text": old_text,
         "new_text": new_text,
-        "diff_stats": json.dumps(diff_stats, ensure_ascii=False, separators=(",", ":")),
-        "diff_count": str(len(diff_texts)),
-        "diff_texts": json.dumps(diff_texts, ensure_ascii=False, separators=(",", ":")),
     }
 
 
@@ -77,13 +74,14 @@ def build_workflow_run_payload(workflow_id: str, parameters: dict[str, Any]) -> 
 
 def extract_business_data(response_data: dict[str, Any]) -> dict[str, Any]:
     """从 Coze 外层响应中提取业务 JSON，兼容 data 为字符串或对象。"""
+    # 检查错误码，即使没有 data 字段也要检查
+    code = response_data.get("code")
+    if code is not None and code != 0:
+        message = response_data.get("msg") or response_data.get("message") or "Coze API 调用失败"
+        raise CozeServiceError(f"Coze 返回错误: code={code}, msg={message}")
+
     if "data" not in response_data:
         return response_data
-
-    code = response_data.get("code")
-    if code not in (None, 0):
-        message = response_data.get("msg") or response_data.get("message") or "Coze API 调用失败"
-        raise CozeServiceError(str(message))
 
     data = response_data.get("data")
     if isinstance(data, str):
@@ -101,7 +99,10 @@ def extract_business_data(response_data: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_comparison_workflow_result(result: dict[str, Any]) -> dict[str, Any]:
     """将 Coze 合同比对文档输出转换为后端已有的增强结果结构。"""
+    logger.info(f"[Coze] normalize_comparison_workflow_result 输入: {json.dumps(result, ensure_ascii=False)[:2000]}")
+
     if "enhanced" in result:
+        logger.info("[Coze] 直接返回 enhanced 格式结果")
         return {
             "success": result.get("success", True),
             "enhanced": result.get("enhanced", []),
@@ -114,6 +115,9 @@ def normalize_comparison_workflow_result(result: dict[str, Any]) -> dict[str, An
     output = result.get("output") or {}
     diff_list = output.get("diff_list") or []
     stats = output.get("stats") or {}
+    logger.info(f"[Coze] output字段: {json.dumps(output, ensure_ascii=False)[:1000]}")
+    logger.info(f"[Coze] diff_list: {diff_list}")
+    logger.info(f"[Coze] stats: {stats}")
 
     enhanced = []
     for item in diff_list:
@@ -234,10 +238,13 @@ class CozeService:
         payload = build_workflow_run_payload(workflow_id, parameters)
 
         logger.info(f"[Coze] 开始调用工作流: workflow_id={workflow_id}")
-        logger.debug(f"[Coze] 工作流入参: {json.dumps(parameters, ensure_ascii=False)[:500]}")
+        logger.info(f"[Coze] 工作流入参长度: old_text={len(parameters.get('old_text', ''))}, new_text={len(parameters.get('new_text', ''))}")
+        logger.info(f"[Coze] 工作流 parameters 内容: task_type={parameters.get('task_type')}, old_text前20字={parameters.get('old_text', '')[:20]}, new_text前20字={parameters.get('new_text', '')[:20]}")
+        logger.debug(f"[Coze] 工作流入参: {json.dumps(parameters, ensure_ascii=False)[:1000]}")
 
         async with httpx.AsyncClient(timeout=self.settings.coze_workflow_timeout_seconds) as client:
             try:
+                logger.info(f"[Coze] 完整请求 payload: {json.dumps(payload, ensure_ascii=False)[:2000]}")
                 response = await client.post(
                     url,
                     headers={
@@ -248,14 +255,19 @@ class CozeService:
                 )
 
                 if response.status_code != 200:
+                    logger.error(f"[Coze] API 返回错误状态码: {response.status_code}, body: {response.text}")
                     raise CozeServiceError(f"Coze API 调用失败: {response.status_code} {response.text}")
 
-                result = extract_business_data(response.json())
-                logger.info(f"[Coze] 工作流调用成功")
-                logger.debug(f"[Coze] 工作流返回: {json.dumps(result, ensure_ascii=False)[:500]}")
+                response_json = response.json()
+                logger.info(f"[Coze] 原始响应状态码: {response.status_code}")
+                logger.info(f"[Coze] 原始响应 body: {json.dumps(response_json, ensure_ascii=False)[:2000]}")
+
+                result = extract_business_data(response_json)
+                logger.info(f"[Coze] 解析后业务数据: {json.dumps(result, ensure_ascii=False)[:2000]}")
                 return result
 
             except httpx.HTTPError as e:
+                logger.error(f"[Coze] 网络错误: {type(e).__name__}: {e!r}")
                 raise CozeServiceError(f"Coze API 网络错误: {type(e).__name__}: {e!r}")
 
     async def upload_file(self, content: bytes, filename: str, content_type: str | None = None) -> str:
