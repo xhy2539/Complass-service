@@ -21,11 +21,16 @@ def _to_int(value: Any, default: int = 0) -> int:
 
 def map_document_risk_level(value: str | None) -> str:
     """将 Coze 文档中的中文风险等级映射为后端枚举值。"""
-    risk_level = (value or "").strip().lower()
+    risk_level = (value or "").strip()
     if risk_level in {"高风险", "high"}:
         return "high"
     if risk_level in {"中风险", "medium", "mid"}:
         return "medium"
+    if risk_level in {"低风险", "low"}:
+        return "low"
+    # "通过" 视为无风险，返回 low
+    if risk_level in {"通过", "pass"}:
+        return "low"
     return "low"
 
 
@@ -55,13 +60,13 @@ def build_comparison_workflow_input(
 
 
 def build_review_workflow_input(file_id: str) -> dict[str, str]:
-    """构建合同审查 Coze 工作流输入，优先使用文档要求的 JSON 字符串。"""
+    """构建合同审查 Coze 工作流输入，传入 file_id 的 JSON 序列化字符串。"""
     return {"input": json.dumps({"file_id": file_id}, ensure_ascii=False, separators=(",", ":"))}
 
 
-def build_review_workflow_object_input(file_id: str) -> dict[str, dict[str, str]]:
-    """构建合同审查 Coze 工作流对象入参，用于字符串格式失败后的重试。"""
-    return {"input": {"file_id": file_id}}
+def build_review_workflow_object_input(file_id: str) -> dict[str, str]:
+    """构建合同审查 Coze 工作流输入，传入 file_id 的 JSON 序列化字符串作为备选。"""
+    return {"input": json.dumps({"file_id": file_id})}
 
 
 def build_workflow_run_payload(workflow_id: str, parameters: dict[str, Any]) -> dict[str, Any]:
@@ -168,14 +173,20 @@ def normalize_review_workflow_result(result: dict[str, Any]) -> dict[str, Any]:
     # PDF 文档字段：agreeCount, highlevelriskCount, lowlevelriskCount (string类型)
     high_count = _to_int(result.get("highlevelriskCount"))
     low_count = _to_int(result.get("lowlevelriskCount"))
+    medium_count = _to_int(result.get("mediumlevelriskCount"))
     passed_count = _to_int(result.get("agreeCount"))
 
     risk_points = []
     for item in result.get("output") or []:
+        # 跳过"通过"的项，只处理有风险的项
+        risk_level = item.get("risk", "")
+        if risk_level == "通过":
+            continue
+
         logger.info(f"[Coze] 处理风险点 item: {json.dumps(item, ensure_ascii=False)}")
         risk_points.append({
             "title": item.get("key", ""),
-            "level": map_document_risk_level(item.get("risk", "")),
+            "level": map_document_risk_level(risk_level),
             "reason": item.get("tip", ""),
             "suggestion": item.get("advice", ""),
             "evidence": item.get("content", ""),
@@ -185,10 +196,10 @@ def normalize_review_workflow_result(result: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "success": True,
-        "overall_conclusion": f"合同审查完成，通过 {passed_count} 项，高风险 {high_count} 项，低风险 {low_count} 项。",
+        "overall_conclusion": f"合同审查完成，通过 {passed_count} 项，高风险 {high_count} 项，中风险 {medium_count} 项，低风险 {low_count} 项。",
         "risk_summary": {
             "high": high_count,
-            "medium": 0,
+            "medium": medium_count,
             "low": low_count,
             "passed": passed_count,
         },
