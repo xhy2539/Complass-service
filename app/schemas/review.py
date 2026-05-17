@@ -5,6 +5,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.comparison import ComparisonTaskSchema, ComparisonRiskPointSchema
+
 
 class ParagraphSchema(BaseModel):
     """段落 schema。"""
@@ -62,6 +64,8 @@ class RiskPointSchema(BaseModel):
     ignore_reason: Optional[str] = None
     review_comment: Optional[str] = None  # 人工复核备注
     source: str = "coze"  # 来源：coze=AI分析, manual=人工标记
+    sentence_id: Optional[str] = None  # 关联句子ID
+    sentence_text: Optional[str] = None  # 关联句子文本
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -82,6 +86,8 @@ class ReviewTaskSchema(BaseModel):
     id: str
     file_name: str
     file_type: str
+    file_size: Optional[int] = None
+    sanitized_text: Optional[str] = None
     char_count: Optional[int] = None
     page_count: Optional[int] = None
     paragraph_count: Optional[int] = None
@@ -111,11 +117,49 @@ class ReviewTaskCreateResponse(BaseModel):
     message: str = "审查任务创建成功"
 
 
+class ReviewTaskListResponse(BaseModel):
+    """审查任务列表响应（带分页信息）。"""
+    tasks: list[ReviewTaskSchema]
+    total: int
+    skip: int
+    limit: int
+
+
 class ReviewTaskQueryResponse(BaseModel):
     """查询审查任务响应。"""
     task: ReviewTaskSchema
     risk_points: list[RiskPointSchema] = []
     message: str = "查询成功"
+
+
+class ReviewRiskListResponse(BaseModel):
+    """审查任务的风险点列表响应。"""
+    task_id: str
+    risk_points: list[RiskPointSchema]
+    total: int
+    risk_stats: RiskStatsSchema
+
+
+class ComparisonRiskListResponse(BaseModel):
+    """比对任务的风险点列表响应。"""
+    task_id: str
+    risk_points: list[ComparisonRiskPointSchema]
+    total: int
+    risk_stats: RiskStatsSchema
+
+
+class ComparisonTaskListResponse(BaseModel):
+    """比对任务列表响应（带分页信息）。"""
+    tasks: list[ComparisonTaskSchema]
+    total: int
+    skip: int
+    limit: int
+
+
+class ReviewExportRequest(BaseModel):
+    """导出合同请求（接收用户修改后的文本）。"""
+    final_text: str = Field(..., description="用户修改后的合同完整文本")
+    file_name: Optional[str] = Field(None, description="导出的文件名")
 
 
 class RiskStatusUpdateRequest(BaseModel):

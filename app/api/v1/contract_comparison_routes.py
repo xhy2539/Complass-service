@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.v1.auth import get_current_user
 from app.models.database import (
@@ -13,6 +13,11 @@ from app.models.database import (
     TaskStatus, RiskLevel, RiskStatus, ComparisonDocVersion, User
 )
 from app.models.database_connection import get_db
+from app.schemas.comparison import (
+    ComparisonTaskSchema, ComparisonTaskCreateResponse, ComparisonTaskQueryResponse,
+    ComparisonRiskPointSchema
+)
+from app.schemas.review import ComparisonTaskListResponse, ComparisonRiskListResponse, RiskStatsSchema
 from app.services.document_parser import DocumentParseError, DocumentParser
 from app.services.text_diff import sentence_diff_with_positions, summarize_diff
 from app.services.coze_service import CozeServiceError, get_coze_service
@@ -428,14 +433,14 @@ async def get_comparison_task(
     }
 
 
-@contract_comparison_router.get("/comparisons")
+@contract_comparison_router.get("/comparisons", response_model=ComparisonTaskListResponse)
 async def list_comparison_tasks(
     skip: int = 0,
     limit: int = 20,
     status: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
-) -> dict:
+) -> ComparisonTaskListResponse:
     """查询当前用户的版本比对任务列表（支持分页和状态筛选）。"""
     query = db.query(ComparisonTask).filter(ComparisonTask.user_id == current_user.id)
 
@@ -446,10 +451,49 @@ async def list_comparison_tasks(
         except ValueError:
             pass
 
+    total = query.count()
     tasks = query.order_by(ComparisonTask.created_at.desc()).offset(skip).limit(limit).all()
 
-    return {
-        "success": True,
-        "tasks": [t.to_dict() for t in tasks],
-        "total": len(tasks)
-    }
+    return ComparisonTaskListResponse(
+        tasks=[ComparisonTaskSchema.model_validate(t.to_dict()) for t in tasks],
+        total=total,
+        skip=skip,
+        limit=limit
+    )
+
+
+@contract_comparison_router.get("/comparisons/{task_id}/risks", response_model=ComparisonRiskListResponse)
+async def get_comparison_task_risks(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> ComparisonRiskListResponse:
+    """查询指定比对任务的风险点列表。"""
+    task = db.query(ComparisonTask).filter(
+        ComparisonTask.id == task_id,
+        ComparisonTask.user_id == current_user.id
+    ).first()
+
+    if not task:
+        raise HTTPException(status_code=404, detail=f"比对任务 {task_id} 不存在或无权访问")
+
+    risk_points = db.query(ComparisonRiskPoint).filter(
+        ComparisonRiskPoint.comparison_task_id == task_id
+    ).all()
+
+    total = len(risk_points)
+    pending = sum(1 for rp in risk_points if rp.status == "pending")
+    confirmed = sum(1 for rp in risk_points if rp.status == "confirmed")
+    ignored = sum(1 for rp in risk_points if rp.status == "ignored")
+
+    return ComparisonRiskListResponse(
+        task_id=task_id,
+        risk_points=[ComparisonRiskPointSchema.model_validate(rp.to_dict()) for rp in risk_points],
+        total=total,
+        risk_stats=RiskStatsSchema(
+            total=total,
+            pending=pending,
+            confirmed=confirmed,
+            ignored=ignored
+        )
+    )

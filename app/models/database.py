@@ -124,6 +124,8 @@ class ReviewTask(Base):
             "id": self.id,
             "file_name": self.file_name,
             "file_type": self.file_type,
+            "file_size": self.file_size,
+            "sanitized_text": self.sanitized_text,
             "char_count": self.char_count,
             "page_count": self.page_count,
             "paragraph_count": self.paragraph_count,
@@ -211,6 +213,7 @@ class Sentence(Base):
 
     # 关联
     review_task = relationship("ReviewTask", back_populates="sentences")
+    risk_points = relationship("RiskPoint", back_populates="sentence")
 
     def to_dict(self) -> dict:
         """转换为字典格式。"""
@@ -277,6 +280,7 @@ class RiskPoint(Base):
 
     # 关联
     review_task = relationship("ReviewTask", back_populates="risk_points")
+    sentence = relationship("Sentence", back_populates="risk_points")
 
     def to_dict(self) -> dict:
         """转换为字典格式。"""
@@ -300,7 +304,9 @@ class RiskPoint(Base):
             "review_comment": self.review_comment,
             "source": self.source,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            # 外键关联的句子信息
+            "sentence_text": self.sentence.text if self.sentence else None,
         }
 
 

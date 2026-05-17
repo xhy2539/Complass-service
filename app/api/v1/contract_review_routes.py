@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +19,11 @@ from app.models.database import (
 from app.models.database_connection import get_db
 from app.schemas.review import (
     ReviewTaskSchema, ReviewTaskCreateResponse, ReviewTaskQueryResponse,
-    RiskPointSchema
+    ReviewTaskListResponse, ReviewRiskListResponse, RiskPointSchema,
+    RiskStatsSchema, ReviewExportRequest
 )
 from app.services.document_parser import DocumentParseError, DocumentParser
+from app.services.document_exporter import DocumentExporter
 
 contract_review_router = APIRouter(tags=["合同审查"])
 
@@ -466,8 +468,8 @@ async def get_review_task(
     if not task:
         raise HTTPException(status_code=404, detail=f"审查任务 {task_id} 不存在或无权访问")
 
-    # 获取风险点
-    risk_points = db.query(RiskPoint).filter(RiskPoint.review_task_id == task_id).all()
+    # 获取风险点（预加载 sentence 关系）
+    risk_points = db.query(RiskPoint).options(joinedload(RiskPoint.sentence)).filter(RiskPoint.review_task_id == task_id).all()
 
     return ReviewTaskQueryResponse(
         task=ReviewTaskSchema.model_validate(task.to_dict()),
@@ -476,14 +478,14 @@ async def get_review_task(
     )
 
 
-@contract_review_router.get("/reviews", response_model=list[ReviewTaskSchema])
+@contract_review_router.get("/reviews", response_model=ReviewTaskListResponse)
 async def list_review_tasks(
     skip: int = 0,
     limit: int = 20,
     status: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
-) -> list[ReviewTaskSchema]:
+) -> ReviewTaskListResponse:
     """查询当前用户的审查任务列表（支持分页和状态筛选）。"""
     query = db.query(ReviewTask).filter(ReviewTask.user_id == current_user.id)
 
@@ -494,6 +496,97 @@ async def list_review_tasks(
         except ValueError:
             pass
 
+    total = query.count()
     tasks = query.order_by(ReviewTask.created_at.desc()).offset(skip).limit(limit).all()
 
-    return [ReviewTaskSchema.model_validate(t.to_dict()) for t in tasks]
+    return ReviewTaskListResponse(
+        tasks=[ReviewTaskSchema.model_validate(t.to_dict()) for t in tasks],
+        total=total,
+        skip=skip,
+        limit=limit
+    )
+
+
+@contract_review_router.get("/reviews/{task_id}/risks", response_model=ReviewRiskListResponse)
+async def get_review_task_risks(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> ReviewRiskListResponse:
+    """查询指定审查任务的风险点列表。"""
+    task = db.query(ReviewTask).filter(
+        ReviewTask.id == task_id,
+        ReviewTask.user_id == current_user.id
+    ).first()
+
+    if not task:
+        raise HTTPException(status_code=404, detail=f"审查任务 {task_id} 不存在或无权访问")
+
+    risk_points = db.query(RiskPoint).options(joinedload(RiskPoint.sentence)).filter(
+        RiskPoint.review_task_id == task_id
+    ).all()
+
+    total = len(risk_points)
+    pending = sum(1 for rp in risk_points if rp.status == RiskStatus.PENDING)
+    confirmed = sum(1 for rp in risk_points if rp.status == RiskStatus.CONFIRMED)
+    ignored = sum(1 for rp in risk_points if rp.status == RiskStatus.IGNORED)
+
+    return ReviewRiskListResponse(
+        task_id=task_id,
+        risk_points=[RiskPointSchema.model_validate(rp.to_dict()) for rp in risk_points],
+        total=total,
+        risk_stats=RiskStatsSchema(
+            total=total,
+            pending=pending,
+            confirmed=confirmed,
+            ignored=ignored
+        )
+    )
+
+
+@contract_review_router.post("/reviews/{task_id}/export")
+async def export_review_document(
+    task_id: str,
+    request: ReviewExportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    导出用户修改后的合同文档（清洁版 docx）。
+
+    前端发送用户编辑后的完整合同文本，后端生成格式化 docx 文件返回。
+    """
+    # 验证任务存在且属于当前用户
+    task = db.query(ReviewTask).filter(
+        ReviewTask.id == task_id,
+        ReviewTask.user_id == current_user.id
+    ).first()
+
+    if not task:
+        raise HTTPException(status_code=404, detail=f"审查任务 {task_id} 不存在或无权访问")
+
+    # 生成文件名
+    original_name = task.file_name
+    base_name = original_name.rsplit('.', 1)[0] if original_name else "合同"
+    export_file_name = request.file_name or f"{base_name}_修改版.docx"
+
+    # 导出为 docx
+    docx_buffer = DocumentExporter.export_text_to_docx(
+        text=request.final_text,
+        file_name=export_file_name,
+        title=base_name
+    )
+
+    # 返回文件流
+    from fastapi.responses import StreamingResponse
+    from urllib.parse import quote
+
+    # URL 编码文件名（处理中文）
+    encoded_filename = quote(export_file_name)
+    return StreamingResponse(
+        docx_buffer,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
+        }
+    )
