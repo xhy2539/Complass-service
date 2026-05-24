@@ -2,12 +2,11 @@ pipeline {
     agent any
 
     parameters {
-        // Use user-scoped SSH credentials when system/global credentials are unavailable.
-        credentials(
-            name: 'SSH_CRED',
-            credentialType: 'com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey',
-            defaultValue: 'prod-server-ssh',
-            description: 'SSH private key credential used to deploy to server'
+        // Fallback when Jenkins credential scope is restricted: input deploy key at build time.
+        text(
+            name: 'DEPLOY_SSH_KEY',
+            defaultValue: '',
+            description: 'OpenSSH private key content for root@deploy host'
         )
     }
 
@@ -26,21 +25,25 @@ pipeline {
     stages {
         stage('Deploy To Server') {
             steps {
-                sshagent(credentials: [params.SSH_CRED]) {
-                    sh '''
-                        set -eux
+                sh '''
+                    set -eux
+                    test -n "${DEPLOY_SSH_KEY}"
 
-                        ssh -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" "
-                            set -eux
-                            cd ${DEPLOY_DIR}
-                            git pull --ff-only
-                            docker build -t complass-service:latest .
-                            docker compose up -d
-                            docker compose ps
-                            curl -f http://127.0.0.1:8080/health
-                        "
-                    '''
-                }
+                    KEY_FILE="$(mktemp)"
+                    trap 'rm -f "${KEY_FILE}"' EXIT
+                    printf '%s\n' "${DEPLOY_SSH_KEY}" > "${KEY_FILE}"
+                    chmod 600 "${KEY_FILE}"
+
+                    ssh -i "${KEY_FILE}" -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" "
+                        set -eux
+                        cd ${DEPLOY_DIR}
+                        git pull --ff-only
+                        docker build -t complass-service:latest .
+                        docker compose up -d
+                        docker compose ps
+                        curl -f http://127.0.0.1:8080/health
+                    "
+                '''
             }
         }
     }
