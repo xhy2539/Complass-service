@@ -7,6 +7,13 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '20'))
     }
 
+    environment {
+        DEPLOY_HOST = '82.156.132.43'
+        DEPLOY_USER = 'root'
+        DEPLOY_DIR = '/opt/complass-service'
+        DEPLOY_SSH_CREDENTIALS_ID = 'prod-server-ssh'
+    }
+
     stages {
         stage('Prepare Python Environment') {
             steps {
@@ -67,6 +74,29 @@ pipeline {
                             python -c "from app.main import app; print(app.title)"
                         '''
                     }
+                }
+            }
+        }
+
+        stage('Deploy To Server') {
+            when {
+                expression { env.GERRIT_EVENT_TYPE == 'change-merged' }
+            }
+            steps {
+                sshagent(credentials: [env.DEPLOY_SSH_CREDENTIALS_ID]) {
+                    sh '''
+                        set -eux
+
+                        ssh -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" "
+                            set -eux
+                            cd ${DEPLOY_DIR}
+                            git pull --ff-only
+                            docker build -t complass-service:latest .
+                            docker compose up -d
+                            docker compose ps
+                            curl -f http://127.0.0.1:8080/health
+                        "
+                    '''
                 }
             }
         }
