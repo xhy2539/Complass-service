@@ -1,6 +1,6 @@
 services:
   mysql:
-    image: mysql:8.0
+    image: docker.m.daocloud.io/library/mysql:8.0
     container_name: complass-mysql
     restart: always
     environment:
