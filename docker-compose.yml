@@ -22,7 +22,7 @@ services:
       retries: 20
 
   complass-service:
-    image: ${IMAGE}
+    image: ${IMAGE:-complass-service:latest}
     container_name: complass-service
     restart: always
     depends_on:
