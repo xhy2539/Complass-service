@@ -1,0 +1,9 @@
+[Unit]
+Description=Complass service auto deploy
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/complass-service
+ExecStart=/opt/complass-service/scripts/auto-deploy.sh

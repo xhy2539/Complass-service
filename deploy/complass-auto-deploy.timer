@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Complass service auto deploy every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=complass-auto-deploy.service
+
+[Install]
+WantedBy=timers.target
