@@ -1,6 +1,16 @@
 pipeline {
     agent any
 
+    parameters {
+        // Use user-scoped SSH credentials when system/global credentials are unavailable.
+        credentials(
+            name: 'SSH_CRED',
+            credentialType: 'com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey',
+            defaultValue: 'prod-server-ssh',
+            description: 'SSH private key credential used to deploy to server'
+        )
+    }
+
     options {
         timestamps()
         disableConcurrentBuilds()
@@ -11,13 +21,12 @@ pipeline {
         DEPLOY_HOST = '82.156.132.43'
         DEPLOY_USER = 'root'
         DEPLOY_DIR = '/opt/complass-service'
-        DEPLOY_SSH_CREDENTIALS_ID = 'prod-server-ssh'
     }
 
     stages {
         stage('Deploy To Server') {
             steps {
-                sshagent(credentials: [env.DEPLOY_SSH_CREDENTIALS_ID]) {
+                sshagent(credentials: [params.SSH_CRED]) {
                     sh '''
                         set -eux
 
