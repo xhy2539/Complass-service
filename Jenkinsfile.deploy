@@ -26,7 +26,7 @@ pipeline {
         stage('Deploy To Server') {
             steps {
                 sh '''
-                    set -eux
+                    set -eu
                     test -n "${DEPLOY_SSH_KEY}"
 
                     KEY_FILE="$(mktemp)"
@@ -34,6 +34,7 @@ pipeline {
                     printf '%s\n' "${DEPLOY_SSH_KEY}" > "${KEY_FILE}"
                     chmod 600 "${KEY_FILE}"
 
+                    set -x
                     ssh -i "${KEY_FILE}" -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" "
                         set -eux
                         cd ${DEPLOY_DIR}
