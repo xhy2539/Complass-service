@@ -35,7 +35,6 @@ pytest*.xml
 junit*.xml
 
 # Local env and runtime files
-.env
 *.db
 *.sqlite
 *.sqlite3
