@@ -24,6 +24,8 @@ from app.schemas.review import (
 )
 from app.services.document_parser import DocumentParseError, DocumentParser
 from app.services.document_exporter import DocumentExporter
+from app.services.rule_service import build_enabled_rules_snapshot, find_rule_snapshot
+from app.services.sanitization_service import restore_text_from_mapping, sanitize_contract_text
 
 contract_review_router = APIRouter(tags=["合同审查"])
 
@@ -273,6 +275,7 @@ def find_best_paragraph_match(
 async def create_review_task(
     file: Annotated[UploadFile, File(description="合同文件，支持 docx/pdf/txt")],
     use_coze: bool = True,
+    contract_type: str = "通用",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> ReviewTaskCreateResponse:
@@ -300,6 +303,20 @@ async def create_review_task(
 
     logger.info(f"[Review] 文件解析完成: {file.filename}, 段落数={len(parse_result.paragraphs)}, 句子数={len(parse_result.sentences)}")
 
+    sanitization = sanitize_contract_text(parse_result.text)
+    if sanitization.errors:
+        raise HTTPException(status_code=422, detail="; ".join(sanitization.errors))
+
+    rule_version = None
+    rules_snapshot: list[dict] = []
+    if use_coze:
+        try:
+            rule_version, rules_snapshot = build_enabled_rules_snapshot(db, contract_type)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if not rules_snapshot:
+            raise HTTPException(status_code=400, detail="当前合同类型没有可用的启用规则")
+
     # 创建审查任务
     task_id = _uuid()
     task = ReviewTask(
@@ -313,7 +330,12 @@ async def create_review_task(
         page_count=parse_result.page_count,
         paragraph_count=len(parse_result.paragraphs),
         sentence_count=len(parse_result.sentences),
-        sanitized_text=parse_result.sanitized_text,
+        sanitized_text=sanitization.sanitized_text,
+        sanitization_mapping_json=sanitization.mappings,
+        sanitization_status="completed",
+        rule_version_id=rule_version.id if rule_version else None,
+        rules_snapshot_json=rules_snapshot,
+        contract_type=contract_type,
         paragraphs_json=[p.__dict__ for p in parse_result.paragraphs],
         sentences_json=parse_result.sentences,
         position_info_json={
@@ -394,6 +416,10 @@ async def create_review_task(
                 content=content,
                 filename=parse_result.file_name,
                 content_type=file.content_type,
+                rules=rules_snapshot,
+                rule_version_id=rule_version.id if rule_version else None,
+                contract_type=contract_type,
+                sanitized_text=sanitization.sanitized_text,
             )
 
             # 更新任务结果
@@ -409,16 +435,21 @@ async def create_review_task(
             logger.info(f"[Review] Coze返回风险点数: {len(risk_points_data)}")
 
             for rp_data in risk_points_data:
+                rule_code = rp_data.get("rule_code") or rp_data.get("rule_id")
+                evidence = restore_text_from_mapping(rp_data.get("evidence") or "", sanitization.mappings)
+                reason = restore_text_from_mapping(rp_data.get("reason") or "", sanitization.mappings)
+                suggestion = restore_text_from_mapping(rp_data.get("suggestion") or "", sanitization.mappings)
+
                 # 使用改进的匹配算法定位风险点
                 position, original_text = find_best_paragraph_match(
                     title=rp_data.get("title", ""),
-                    reason=rp_data.get("reason", ""),
+                    reason=reason,
                     paragraphs_info=paragraphs_info
                 )
 
                 # 查找最匹配的句子
                 matched_sentence = find_best_sentence_match(
-                    evidence=rp_data.get("evidence", ""),
+                    evidence=evidence,
                     sentences_info=sentences_info
                 )
 
@@ -427,11 +458,13 @@ async def create_review_task(
                     review_task_id=task_id,
                     title=rp_data.get("title", ""),
                     level=RiskLevel(rp_data.get("level", "medium")),
-                    reason=rp_data.get("reason", ""),
-                    evidence=rp_data.get("evidence"),
-                    impact=rp_data.get("impact"),
-                    suggestion=rp_data.get("suggestion", ""),
-                    replace_text=rp_data.get("replace_text"),
+                    reason=reason,
+                    evidence=evidence,
+                    impact=restore_text_from_mapping(rp_data.get("impact") or "", sanitization.mappings),
+                    suggestion=suggestion,
+                    replace_text=restore_text_from_mapping(rp_data.get("replace_text") or "", sanitization.mappings),
+                    rule_code=rule_code,
+                    rule_snapshot_json=find_rule_snapshot(rules_snapshot, rule_code),
                     position=position,
                     sentence_id=matched_sentence["id"] if matched_sentence else None,
                     status=RiskStatus.PENDING,

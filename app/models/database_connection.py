@@ -32,14 +32,36 @@ def init_db() -> None:
 
 def _ensure_schema_updates() -> None:
     """补齐轻量字段迁移，避免已有开发库缺少新增列。"""
+    _add_column_if_missing("risk_points", "replace_text", "TEXT")
+    _add_column_if_missing("review_tasks", "rule_version_id", "VARCHAR(36)")
+    _add_column_if_missing("review_tasks", "rules_snapshot_json", "JSON")
+    _add_column_if_missing("review_tasks", "contract_type", "VARCHAR(50) NOT NULL DEFAULT '通用'")
+    _add_column_if_missing("review_tasks", "sanitization_mapping_json", "JSON")
+    _add_column_if_missing("review_tasks", "sanitization_status", "VARCHAR(20) NOT NULL DEFAULT 'not_required'")
+    _add_column_if_missing("review_tasks", "sanitization_error", "TEXT")
+    _add_column_if_missing("risk_points", "rule_code", "VARCHAR(50)")
+    _add_column_if_missing("risk_points", "rule_snapshot_json", "JSON")
+    _add_column_if_missing("comparison_tasks", "rule_version_id", "VARCHAR(36)")
+    _add_column_if_missing("comparison_tasks", "rules_snapshot_json", "JSON")
+    _add_column_if_missing("comparison_tasks", "contract_type", "VARCHAR(50) NOT NULL DEFAULT '通用'")
+    _add_column_if_missing("comparison_tasks", "old_sanitization_mapping_json", "JSON")
+    _add_column_if_missing("comparison_tasks", "new_sanitization_mapping_json", "JSON")
+    _add_column_if_missing("comparison_tasks", "sanitization_status", "VARCHAR(20) NOT NULL DEFAULT 'not_required'")
+    _add_column_if_missing("comparison_tasks", "sanitization_error", "TEXT")
+    _add_column_if_missing("comparison_risk_points", "rule_code", "VARCHAR(50)")
+    _add_column_if_missing("comparison_risk_points", "rule_snapshot_json", "JSON")
+
+
+def _add_column_if_missing(table_name: str, column_name: str, ddl: str) -> None:
+    """在开发库缺列时补齐字段。"""
     inspector = inspect(engine)
-    if "risk_points" not in inspector.get_table_names():
+    if table_name not in inspector.get_table_names():
         return
 
-    columns = {column["name"] for column in inspector.get_columns("risk_points")}
-    if "replace_text" not in columns:
+    columns = {column["name"] for column in inspector.get_columns(table_name)}
+    if column_name not in columns:
         with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE risk_points ADD COLUMN replace_text TEXT"))
+            connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl}"))
 
 
 def get_db() -> Generator[Session, None, None]:

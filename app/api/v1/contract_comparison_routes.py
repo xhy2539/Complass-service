@@ -21,6 +21,7 @@ from app.schemas.review import ComparisonTaskListResponse, ComparisonRiskListRes
 from app.services.document_parser import DocumentParseError, DocumentParser
 from app.services.text_diff import sentence_diff_with_positions, summarize_diff
 from app.services.coze_service import CozeServiceError, get_coze_service
+from app.services.rule_service import build_enabled_rules_snapshot, find_rule_snapshot
 from app.services.sanitization_service import restore_text_from_mapping, sanitize_contract_text, apply_sanitization_mappings
 
 contract_comparison_router = APIRouter(tags=["合同版本比对"])

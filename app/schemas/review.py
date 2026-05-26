@@ -53,6 +53,8 @@ class RiskPointSchema(BaseModel):
     evidence: Optional[str] = None  # 证据材料
     impact: Optional[str] = None  # 影响程度
     replace_text: Optional[str] = None  # Coze 返回的可替换修改文本
+    rule_code: Optional[str] = None  # 命中的规则编号
+    rule_snapshot_json: Optional[dict] = None  # 任务执行时的规则快照
     # 位置和原文
     position: Optional[dict] = None  # {"paragraph_index": 0, "char_offset_start": 100}
     original_text: Optional[str] = None
@@ -88,6 +90,10 @@ class ReviewTaskSchema(BaseModel):
     file_type: str
     file_size: Optional[int] = None
     sanitized_text: Optional[str] = None
+    sanitization_status: str = "not_required"
+    sanitization_error: Optional[str] = None
+    rule_version_id: Optional[str] = None
+    contract_type: str = "通用"
     char_count: Optional[int] = None
     page_count: Optional[int] = None
     paragraph_count: Optional[int] = None

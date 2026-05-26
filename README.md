@@ -8,10 +8,13 @@
 - 单合同上传审查：解析 `docx` / `pdf` / `txt`，保存段落、句子和风险定位信息
 - 双版本合同上传比对：生成句子级 diff，并可调用 Coze 进行语义增强
 - Coze 合同审查工作流接入：先上传文件获取 `file_id`，再调用审查 workflow
+- 规则库数据库化：支持规则 CRUD、CSV 导入、规则版本激活和审查任务规则快照
+- 审查/比对调用 Coze 前执行脱敏，并保留脱敏映射用于结果回填
 - Coze 合同比对工作流接入：基于 `old_text`、`new_text`、`diff_stats`、`diff_texts` 生成增强结果
 - Coze 外层 `data` 字符串 JSON 自动解析和结果归一化
 - 风险点保存、查询、确认、忽略和人工复核备注
 - 审查任务、比对任务、任务风险点列表查询
+- AI 建议采纳后生成优化合同版本，原合同不被覆盖
 - 基于用户编辑后的最终合同文本导出清洁版 `docx`
 - Jenkins Verify 流水线检查：依赖安装、语法检查、应用导入检查
 
@@ -94,13 +97,18 @@ GET /api/v1/reviews
 GET /api/v1/reviews/{task_id}
 GET /api/v1/reviews/{task_id}/risks
 POST /api/v1/reviews/{task_id}/export
+POST /api/v1/reviews/{task_id}/suggestions/apply
+GET /api/v1/reviews/{task_id}/optimized-versions
+GET /api/v1/reviews/{task_id}/optimized-versions/{version_id}
+POST /api/v1/reviews/{task_id}/optimized-versions/{version_id}/export
 ```
 
 说明：
 
 - `POST /reviews` 上传单份合同文件，支持 `docx`、`pdf`、`txt`
-- `use_coze=true` 时会调用 Coze 审查工作流并保存风险点
+- `use_coze=true` 时会读取当前激活规则版本、执行脱敏、调用 Coze 审查工作流并保存风险点
 - `POST /reviews/{task_id}/export` 根据前端提交的最终合同文本导出 `docx`
+- `POST /reviews/{task_id}/suggestions/apply` 根据用户采纳的风险建议生成优化合同版本
 
 ### 合同版本比对
 
@@ -116,6 +124,26 @@ GET /api/v1/comparisons/{task_id}/risks
 - `POST /comparisons` 上传旧版和新版合同文件
 - `enhance=true` 时会调用 Coze 比对增强工作流
 - 返回内容包含 diff 统计、差异明细、合同文档信息和比对风险点
+
+### 规则库管理
+
+```http
+GET /api/v1/rules
+POST /api/v1/rules
+PATCH /api/v1/rules/{rule_id}
+DELETE /api/v1/rules/{rule_id}
+PATCH /api/v1/rules/{rule_id}/enabled
+POST /api/v1/rules/import-csv
+GET /api/v1/rule-versions
+POST /api/v1/rule-versions
+POST /api/v1/rule-versions/{version_id}/activate
+```
+
+说明：
+
+- CSV 导入成功后生成草稿规则版本，激活后才参与新审查任务
+- 审查和比对任务会保存当时使用的 `rule_version_id` 和规则快照
+- 没有激活规则版本时，启用 Coze 的审查/比对请求会返回明确错误
 
 ### 风险点人工确认
 

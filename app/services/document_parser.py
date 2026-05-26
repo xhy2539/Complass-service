@@ -313,15 +313,17 @@ class DocumentParser:
                     paragraph_type, paragraph_level, filename,
                 )
 
+            joined_text = "\n".join(p.text for p in paragraphs)
+
             return ParsedDocument(
-                text=text,
+                text=joined_text,
                 paragraphs=paragraphs,
                 sentences=sentences,
-                char_count=len(text),
+                char_count=len(joined_text),
                 page_count=None,
                 file_name=filename,
                 file_type="txt",
-                sanitized_text=cls._sanitize_text(text),
+                sanitized_text=cls._sanitize_text(joined_text),
             )
         except Exception as e:
             raise DocumentParseError(f"解析 txt 文件失败: {e}")

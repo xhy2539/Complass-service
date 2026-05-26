@@ -14,6 +14,10 @@ class ComparisonTaskSchema(BaseModel):
     new_file_type: str
     old_char_count: Optional[int] = None
     new_char_count: Optional[int] = None
+    sanitization_status: str = "not_required"
+    sanitization_error: Optional[str] = None
+    rule_version_id: Optional[str] = None
+    contract_type: str = "通用"
     diff_stats: Optional[dict] = None
     total_risks: int = 0
     status: str
@@ -53,6 +57,8 @@ class ComparisonRiskPointSchema(BaseModel):
     similarity: Optional[int] = None
     summary: Optional[str] = None
     risk_level: Optional[str] = None
+    rule_code: Optional[str] = None
+    rule_snapshot_json: Optional[dict] = None
     # 新增字段
     category: Optional[str] = None
     evidence: Optional[str] = None

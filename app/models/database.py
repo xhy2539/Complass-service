@@ -75,6 +75,89 @@ class ReviewType(str, Enum):
     COMPARISON = "comparison"  # 版本比对
 
 
+class RuleVersionStatus(str, Enum):
+    """规则版本状态枚举。"""
+    DRAFT = "draft"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class ReviewRuleVersion(Base):
+    """规则版本表，用于锁定每次审查使用的规则集合。"""
+    __tablename__ = "review_rule_versions"
+
+    id = Column(String(36), primary_key=True)
+    version_no = Column(Integer, unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(SQLEnum(RuleVersionStatus), default=RuleVersionStatus.DRAFT, nullable=False)
+    created_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
+    activated_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    rules = relationship("ReviewRule", back_populates="version", cascade="all, delete-orphan")
+
+    def to_dict(self) -> dict:
+        """转换为接口响应字典。"""
+        return {
+            "id": self.id,
+            "version_no": self.version_no,
+            "name": self.name,
+            "description": self.description,
+            "status": self.status.value if self.status else None,
+            "activated_at": self.activated_at.isoformat() if self.activated_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "rule_count": len(self.rules),
+        }
+
+
+class ReviewRule(Base):
+    """审核规则明细表。"""
+    __tablename__ = "review_rules"
+
+    id = Column(String(36), primary_key=True)
+    version_id = Column(String(36), ForeignKey("review_rule_versions.id"), nullable=False, index=True)
+    rule_code = Column(String(50), nullable=False)
+    contract_type = Column(String(50), nullable=False)
+    review_module = Column(String(50), nullable=False)
+    risk_name = Column(String(100), nullable=False)
+    check_point = Column(Text, nullable=True)
+    trigger_condition = Column(Text, nullable=True)
+    default_risk_level = Column(String(20), nullable=False)
+    suggestion_template = Column(Text, nullable=True)
+    example_clause = Column(Text, nullable=True)
+    enabled = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    version = relationship("ReviewRuleVersion", back_populates="rules")
+
+    __table_args__ = (
+        Index("ix_review_rules_version_rule_code", "version_id", "rule_code", unique=True),
+    )
+
+    def to_dict(self) -> dict:
+        """转换为接口响应字典。"""
+        return {
+            "id": self.id,
+            "version_id": self.version_id,
+            "rule_code": self.rule_code,
+            "contract_type": self.contract_type,
+            "review_module": self.review_module,
+            "risk_name": self.risk_name,
+            "check_point": self.check_point,
+            "trigger_condition": self.trigger_condition,
+            "default_risk_level": self.default_risk_level,
+            "suggestion_template": self.suggestion_template,
+            "example_clause": self.example_clause,
+            "enabled": self.enabled,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class ReviewTask(Base):
     """单合同审查任务表。"""
     __tablename__ = "review_tasks"
@@ -93,6 +176,9 @@ class ReviewTask(Base):
     paragraph_count = Column(Integer, nullable=True)
     sentence_count = Column(Integer, nullable=True)
     sanitized_text = Column(Text, nullable=True)  # 脱敏后文本
+    sanitization_mapping_json = Column(JSON, nullable=True)
+    sanitization_status = Column(String(20), default="not_required", nullable=False)
+    sanitization_error = Column(Text, nullable=True)
 
     # 段落结构 JSON
     paragraphs_json = Column(JSON, nullable=True)
@@ -105,6 +191,11 @@ class ReviewTask(Base):
     risk_summary = Column(JSON, nullable=True)  # {"high": 0, "medium": 0, "low": 0}
     suggest_deep_review = Column(Boolean, default=False)
     coze_message = Column(Text, nullable=True)
+
+    # 规则版本快照
+    rule_version_id = Column(String(36), ForeignKey("review_rule_versions.id"), nullable=True, index=True)
+    rules_snapshot_json = Column(JSON, nullable=True)
+    contract_type = Column(String(50), default="通用", nullable=False)
 
     # 任务状态
     status = Column(SQLEnum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
@@ -126,6 +217,10 @@ class ReviewTask(Base):
             "file_type": self.file_type,
             "file_size": self.file_size,
             "sanitized_text": self.sanitized_text,
+            "sanitization_status": self.sanitization_status,
+            "sanitization_error": self.sanitization_error,
+            "rule_version_id": self.rule_version_id,
+            "contract_type": self.contract_type,
             "char_count": self.char_count,
             "page_count": self.page_count,
             "paragraph_count": self.paragraph_count,
@@ -253,6 +348,8 @@ class RiskPoint(Base):
 
     # Coze 建议替换文本
     replace_text = Column(Text, nullable=True)
+    rule_code = Column(String(50), nullable=True, index=True)
+    rule_snapshot_json = Column(JSON, nullable=True)
 
     # 原文位置信息（用于前端高亮定位）
     position = Column(JSON, nullable=True)  # {"paragraph_index": 0, "char_offset_start": 100, "char_offset_end": 200}
@@ -294,6 +391,8 @@ class RiskPoint(Base):
             "evidence": self.evidence,
             "impact": self.impact,
             "replace_text": self.replace_text,
+            "rule_code": self.rule_code,
+            "rule_snapshot_json": self.rule_snapshot_json,
             "position": self.position,
             "sentence_id": self.sentence_id,
             "status": self.status.value if self.status else None,
@@ -344,6 +443,10 @@ class ComparisonTask(Base):
     new_text = Column(Text, nullable=True)          # 新合同纯文本
     old_sanitized_text = Column(Text, nullable=True)  # 旧合同脱敏后文本
     new_sanitized_text = Column(Text, nullable=True)  # 新合同脱敏后文本
+    old_sanitization_mapping_json = Column(JSON, nullable=True)
+    new_sanitization_mapping_json = Column(JSON, nullable=True)
+    sanitization_status = Column(String(20), default="not_required", nullable=False)
+    sanitization_error = Column(Text, nullable=True)
 
     # diff 结果
     diff_stats = Column(JSON, nullable=True)  # {"total": 0, "added": 0, "deleted": 0, "modified": 0}
@@ -353,6 +456,11 @@ class ComparisonTask(Base):
     # Coze 增强结果
     coze_enhanced = Column(JSON, nullable=True)
     total_risks = Column(Integer, default=0)
+
+    # 规则版本快照
+    rule_version_id = Column(String(36), ForeignKey("review_rule_versions.id"), nullable=True, index=True)
+    rules_snapshot_json = Column(JSON, nullable=True)
+    contract_type = Column(String(50), default="通用", nullable=False)
 
     # 任务状态
     status = Column(SQLEnum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
@@ -379,6 +487,10 @@ class ComparisonTask(Base):
             "new_paragraph_count": self.new_paragraph_count,
             "old_text": self.old_text,
             "new_text": self.new_text,
+            "sanitization_status": self.sanitization_status,
+            "sanitization_error": self.sanitization_error,
+            "rule_version_id": self.rule_version_id,
+            "contract_type": self.contract_type,
             "diff_stats": self.diff_stats,
             "total_risks": self.total_risks,
             "status": self.status.value if self.status else None,
@@ -494,6 +606,8 @@ class ComparisonRiskPoint(Base):
     summary = Column(Text, nullable=True)
     risk_level = Column(SQLEnum(RiskLevel), nullable=True)
     suggestion = Column(Text, nullable=True)
+    rule_code = Column(String(50), nullable=True, index=True)
+    rule_snapshot_json = Column(JSON, nullable=True)
 
     # 风险分类
     category = Column(String(50), nullable=True)
@@ -538,6 +652,8 @@ class ComparisonRiskPoint(Base):
             "summary": self.summary,
             "risk_level": self.risk_level.value if self.risk_level else None,
             "suggestion": self.suggestion,
+            "rule_code": self.rule_code,
+            "rule_snapshot_json": self.rule_snapshot_json,
             "category": self.category,
             "evidence": self.evidence,
             "impact": self.impact,
@@ -552,3 +668,49 @@ class ComparisonRiskPoint(Base):
             "ignore_reason": self.ignore_reason,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
+
+
+class OptimizedContractVersion(Base):
+    """优化后合同版本表。"""
+    __tablename__ = "optimized_contract_versions"
+
+    id = Column(String(36), primary_key=True)
+    review_task_id = Column(String(36), ForeignKey("review_tasks.id"), nullable=False, index=True)
+    version_no = Column(Integer, nullable=False)
+    title = Column(String(255), nullable=False)
+    text = Column(Text, nullable=False)
+    accepted_risk_ids_json = Column(JSON, nullable=True)
+    created_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    review_task = relationship("ReviewTask")
+
+    __table_args__ = (
+        Index("ix_optimized_versions_task_version", "review_task_id", "version_no", unique=True),
+    )
+
+    def to_dict(self) -> dict:
+        """转换为接口响应字典。"""
+        return {
+            "id": self.id,
+            "review_task_id": self.review_task_id,
+            "version_no": self.version_no,
+            "title": self.title,
+            "text": self.text,
+            "accepted_risk_ids": self.accepted_risk_ids_json or [],
+            "created_by_user_id": self.created_by_user_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class AcceptedSuggestion(Base):
+    """采纳建议记录表。"""
+    __tablename__ = "accepted_suggestions"
+
+    id = Column(String(36), primary_key=True)
+    optimized_version_id = Column(String(36), ForeignKey("optimized_contract_versions.id"), nullable=False, index=True)
+    risk_point_id = Column(String(36), ForeignKey("risk_points.id"), nullable=False, index=True)
+    original_text = Column(Text, nullable=True)
+    replace_text = Column(Text, nullable=False)
+    position = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
