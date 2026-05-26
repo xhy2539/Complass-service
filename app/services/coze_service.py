@@ -228,6 +228,7 @@ def normalize_review_workflow_result(result: dict[str, Any]) -> dict[str, Any]:
             "evidence": item.get("content", ""),
             "impact": item.get("tip", ""),
             "replace_text": item.get("replace_text", ""),
+            "rule_code": item.get("rule_code"),
         })
 
     return {
