@@ -23,6 +23,9 @@ class ComplassServiceSettings(BaseSettings):
     coze_upload_timeout_seconds: float = 120.0
     max_upload_size_mb: int = 20
 
+    # CORS 允许的来源列表，逗号分隔
+    cors_allow_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
     # JWT 配置
     jwt_secret_key: str = "your-super-secret-key-change-in-production"  # 生产环境必须更换
     jwt_algorithm: str = "HS256"
