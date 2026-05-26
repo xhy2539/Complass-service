@@ -21,6 +21,7 @@ from app.schemas.review import ComparisonTaskListResponse, ComparisonRiskListRes
 from app.services.document_parser import DocumentParseError, DocumentParser
 from app.services.text_diff import sentence_diff_with_positions, summarize_diff
 from app.services.coze_service import CozeServiceError, get_coze_service
+from app.services.sanitization_service import restore_text_from_mapping, sanitize_contract_text, apply_sanitization_mappings
 
 contract_comparison_router = APIRouter(tags=["合同版本比对"])
 
@@ -49,6 +50,7 @@ async def create_comparison_task(
     old_file: Annotated[UploadFile, File(description="旧版本合同")],
     new_file: Annotated[UploadFile, File(description="新版本合同")],
     enhance: bool = True,
+    contract_type: str = "通用",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> dict:
@@ -81,6 +83,22 @@ async def create_comparison_task(
     except DocumentParseError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    old_sanitization = sanitize_contract_text(old_doc.text)
+    new_sanitization = sanitize_contract_text(new_doc.text)
+    sanitization_errors = old_sanitization.errors + new_sanitization.errors
+    if sanitization_errors:
+        raise HTTPException(status_code=422, detail="; ".join(sanitization_errors))
+
+    rule_version = None
+    rules_snapshot: list[dict] = []
+    if enhance:
+        try:
+            rule_version, rules_snapshot = build_enabled_rules_snapshot(db, contract_type)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if not rules_snapshot:
+            raise HTTPException(status_code=400, detail="当前合同类型没有可用的启用规则")
+
     # 创建比对任务
     task_id = _uuid()
     task = ComparisonTask(
@@ -100,8 +118,14 @@ async def create_comparison_task(
         new_paragraph_count=len(new_doc.paragraphs),
         old_text=old_doc.text,
         new_text=new_doc.text,
-        old_sanitized_text=old_doc.sanitized_text,
-        new_sanitized_text=new_doc.sanitized_text,
+        old_sanitized_text=old_sanitization.sanitized_text,
+        new_sanitized_text=new_sanitization.sanitized_text,
+        old_sanitization_mapping_json=old_sanitization.mappings,
+        new_sanitization_mapping_json=new_sanitization.mappings,
+        sanitization_status="completed",
+        rule_version_id=rule_version.id if rule_version else None,
+        rules_snapshot_json=rules_snapshot,
+        contract_type=contract_type,
         status=TaskStatus.PROCESSING
     )
 
@@ -121,7 +145,7 @@ async def create_comparison_task(
         page_count=old_doc.page_count,
         paragraph_count=len(old_doc.paragraphs),
         sentence_count=len(old_doc.sentences),
-        sanitized_text=old_doc.sanitized_text
+        sanitized_text=old_sanitization.sanitized_text
     )
     db.add(old_document)
 
@@ -139,7 +163,7 @@ async def create_comparison_task(
         page_count=new_doc.page_count,
         paragraph_count=len(new_doc.paragraphs),
         sentence_count=len(new_doc.sentences),
-        sanitized_text=new_doc.sanitized_text
+        sanitized_text=new_sanitization.sanitized_text
     )
     db.add(new_document)
 
@@ -211,15 +235,19 @@ async def create_comparison_task(
     diffs = sentence_diff_with_positions(old_comparison_data, new_comparison_data)
     summary = summarize_diff(diffs)
 
-    # 构建 Coze 新版格式的 diff_texts
+    # 构建 Coze 新版格式的 diff_texts（脱敏后）
     diff_texts = []
     for d in diffs:
         if d.change_type == "modified":
-            content = f"修改内容：{d.old_text} → {d.new_text}"
+            old_text = apply_sanitization_mappings(d.old_text or "", old_sanitization.mappings)
+            new_text = apply_sanitization_mappings(d.new_text or "", new_sanitization.mappings)
+            content = f"修改内容：{old_text} → {new_text}"
         elif d.change_type == "added":
-            content = f"新增内容：{d.new_text}"
+            new_text = apply_sanitization_mappings(d.new_text or "", new_sanitization.mappings)
+            content = f"新增内容：{new_text}"
         elif d.change_type == "deleted":
-            content = f"删除内容：{d.old_text}"
+            old_text = apply_sanitization_mappings(d.old_text or "", old_sanitization.mappings)
+            content = f"删除内容：{old_text}"
         else:
             continue
         diff_texts.append({"type": d.change_type, "content": content})
@@ -273,10 +301,13 @@ async def create_comparison_task(
         try:
             coze_service = get_coze_service()
             coze_result = await coze_service.enhance_diff_result({
-                "old_text": old_doc.sanitized_text,
-                "new_text": new_doc.sanitized_text,
+                "old_text": old_sanitization.sanitized_text,
+                "new_text": new_sanitization.sanitized_text,
                 "diff_stats": task.diff_stats,
                 "diff_texts": diff_texts,
+                "rules": rules_snapshot,
+                "rule_version_id": rule_version.id if rule_version else None,
+                "contract_type": contract_type,
             })
 
             task.coze_enhanced = coze_result.get("enhanced", [])
@@ -292,6 +323,7 @@ async def create_comparison_task(
 
             # 创建比对风险点
             for enhanced in coze_result.get("enhanced", []):
+                rule_code = enhanced.get("rule_code") or enhanced.get("rule_id")
                 # Coze 返回字段: category, change_type, evidence, impact,
                 #               new_quote, old_quote, original, risk_level, suggestion, summary
                 # 找到对应的 diff 项（通过 new_quote/old_quote 匹配）
@@ -351,12 +383,14 @@ async def create_comparison_task(
                     old_text=diff_item.old_text if diff_item else coze_old_quote,
                     new_text=diff_item.new_text if diff_item else coze_new_quote or enhanced.get("original", ""),
                     similarity=int(diff_item.similarity * 100) if diff_item else 0,
-                    summary=enhanced.get("summary", ""),
+                    summary=restore_text_from_mapping(enhanced.get("summary") or "", new_sanitization.mappings),
                     risk_level=RiskLevel(enhanced.get("risk_level", "low")),
+                    rule_code=rule_code,
+                    rule_snapshot_json=find_rule_snapshot(rules_snapshot, rule_code),
                     category=enhanced.get("category"),
-                    evidence=enhanced.get("evidence"),
-                    impact=enhanced.get("impact"),
-                    suggestion=enhanced.get("suggestion", ""),
+                    evidence=restore_text_from_mapping(enhanced.get("evidence") or "", old_sanitization.mappings + new_sanitization.mappings),
+                    impact=restore_text_from_mapping(enhanced.get("impact") or "", new_sanitization.mappings),
+                    suggestion=restore_text_from_mapping(enhanced.get("suggestion") or "", new_sanitization.mappings),
                     old_position=diff_item.old_position if diff_item else None,
                     new_position=diff_item.new_position if diff_item else None,
                     old_sentence_id=old_sentence_id,
