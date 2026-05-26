@@ -21,19 +21,27 @@ pipeline {
                     if (isUnix()) {
                         sh '''
                             set -eux
-                            rm -rf .venv
-                            (python3 -m venv .venv || python -m venv .venv)
-                            . .venv/bin/activate
-                            python -m pip install --upgrade pip
-                            python -m pip install -r requirements.txt
+                            REQUIREMENTS_HASH=".requirements_hash"
+                            CURRENT_HASH="$(sha256sum requirements.txt | cut -d" " -f1)"
+                            if [ ! -d .venv ] || [ ! -f "${REQUIREMENTS_HASH}" ] || [ "$(cat ${REQUIREMENTS_HASH})" != "${CURRENT_HASH}" ]; then
+                                rm -rf .venv
+                                (python3 -m venv .venv || python -m venv .venv)
+                                . .venv/bin/activate
+                                python -m pip install --upgrade pip
+                                python -m pip install -r requirements.txt
+                                echo "${CURRENT_HASH}" > "${REQUIREMENTS_HASH}"
+                            else
+                                echo ".venv is up to date"
+                            fi
                         '''
                     } else {
                         bat '''
-                            if exist .venv rmdir /s /q .venv
-                            py -3 -m venv .venv || python -m venv .venv
-                            call .venv\\Scripts\\activate.bat
-                            python -m pip install --upgrade pip
-                            python -m pip install -r requirements.txt
+                            if not exist .venv (
+                                py -3 -m venv .venv
+                                call .venv\\Scripts\\activate.bat
+                                python -m pip install --upgrade pip
+                                python -m pip install -r requirements.txt
+                            )
                         '''
                     }
                 }
