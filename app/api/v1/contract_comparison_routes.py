@@ -399,7 +399,8 @@ async def create_comparison_task(
                 )
                 db.add(risk_point)
 
-        except CozeServiceError as e:
+        except Exception as e:
+            logger.error(f"[Comparison] Coze 增强失败: {type(e).__name__}: {e}")
             task.coze_enhanced = []
             task.total_risks = 0
 

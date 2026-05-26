@@ -50,23 +50,59 @@ def build_comparison_workflow_input(
     diff_stats: dict[str, int],
     diff_texts: list[dict[str, str]],
     task_type: str = "contract_comparison",
+    rules: list[dict] | None = None,
+    rule_version_id: str | None = None,
+    contract_type: str = "通用",
 ) -> dict[str, Any]:
     """构建合同比对 Coze 工作流输入，对齐 Coze 文档格式。"""
     return {
         "task_type": task_type,
         "old_text": old_text,
         "new_text": new_text,
+        "diff_stats": diff_stats,
+        "diff_texts": diff_texts,
+        "contract_type": contract_type,
+        "rule_version_id": rule_version_id,
+        "rules": rules or [],
     }
 
 
-def build_review_workflow_input(file_id: str) -> dict[str, str]:
-    """构建合同审查 Coze 工作流输入，传入 file_id 的 JSON 序列化字符串。"""
-    return {"input": json.dumps({"file_id": file_id}, ensure_ascii=False, separators=(",", ":"))}
+def build_review_workflow_input(
+    file_id: str,
+    rules: list[dict] | None = None,
+    rule_version_id: str | None = None,
+    contract_type: str = "通用",
+    sanitized_text: str | None = None,
+) -> dict[str, str]:
+    """构建合同审查 Coze 工作流输入。"""
+    payload = {
+        "file_id": file_id,
+        "contract_type": contract_type,
+        "rule_version_id": rule_version_id,
+        "rules": rules or [],
+        "sanitized_text": sanitized_text or "",
+        "sanitization_enabled": bool(sanitized_text),
+    }
+    return {"input": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}
 
 
-def build_review_workflow_object_input(file_id: str) -> dict[str, str]:
-    """构建合同审查 Coze 工作流输入，传入 file_id 的 JSON 序列化字符串作为备选。"""
-    return {"input": json.dumps({"file_id": file_id})}
+def build_review_workflow_object_input(
+    file_id: str,
+    rules: list[dict] | None = None,
+    rule_version_id: str | None = None,
+    contract_type: str = "通用",
+    sanitized_text: str | None = None,
+) -> dict[str, str]:
+    """构建合同审查 Coze 工作流输入，作为兼容备选。"""
+    payload = {
+        "file_id": file_id,
+        "contract_type": contract_type,
+        "rule_version_id": rule_version_id,
+        "rules": rules or [],
+        "sanitized_text": sanitized_text or "",
+        "sanitization_enabled": bool(sanitized_text),
+    }
+    return {"input": json.dumps(payload, ensure_ascii=False)}
 
 
 def build_workflow_run_payload(workflow_id: str, parameters: dict[str, Any]) -> dict[str, Any]:
@@ -269,7 +305,12 @@ class CozeService:
                     logger.error(f"[Coze] API 返回错误状态码: {response.status_code}, body: {response.text}")
                     raise CozeServiceError(f"Coze API 调用失败: {response.status_code} {response.text}")
 
-                response_json = response.json()
+                try:
+                    response_json = response.json()
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.error(f"[Coze] JSON 解析失败: {type(e).__name__}: {e!r}, body: {response.text[:500]}")
+                    raise CozeServiceError(f"Coze 返回非 JSON 数据: {type(e).__name__}: {e!r}")
+
                 logger.info(f"[Coze] 原始响应状态码: {response.status_code}")
                 logger.info(f"[Coze] 原始响应 body: {json.dumps(response_json, ensure_ascii=False)[:2000]}")
 
@@ -324,20 +365,36 @@ class CozeService:
         content: bytes,
         filename: str,
         content_type: str | None = None,
+        rules: list[dict] | None = None,
+        rule_version_id: str | None = None,
+        contract_type: str = "通用",
+        sanitized_text: str | None = None,
     ) -> dict[str, Any]:
-        """上传合同文件后按 Coze 文档格式调用合同审查工作流。"""
+        """上传合同文件后携带规则调用合同审查工作流。"""
         file_id = await self.upload_file(content, filename, content_type)
         logger.info(f"[Coze] 开始审查合同: file_id={file_id}, workflow_id={self.review_workflow_id}")
         try:
             result = await self.call_workflow(
                 self.review_workflow_id,
-                build_review_workflow_input(file_id),
+                build_review_workflow_input(
+                    file_id,
+                    rules=rules,
+                    rule_version_id=rule_version_id,
+                    contract_type=contract_type,
+                    sanitized_text=sanitized_text,
+                ),
             )
         except CozeServiceError:
             logger.warning(f"[Coze] JSON格式调用失败，尝试对象格式重试")
             result = await self.call_workflow(
                 self.review_workflow_id,
-                build_review_workflow_object_input(file_id),
+                build_review_workflow_object_input(
+                    file_id,
+                    rules=rules,
+                    rule_version_id=rule_version_id,
+                    contract_type=contract_type,
+                    sanitized_text=sanitized_text,
+                ),
             )
         return normalize_review_workflow_result(result)
 
@@ -356,6 +413,9 @@ class CozeService:
             new_text=diff_summary.get("new_text", ""),
             diff_stats=diff_summary.get("diff_stats", {"total": 0, "added": 0, "deleted": 0, "modified": 0}),
             diff_texts=diff_summary.get("diff_texts", []),
+            rules=diff_summary.get("rules", []),
+            rule_version_id=diff_summary.get("rule_version_id"),
+            contract_type=diff_summary.get("contract_type", "通用"),
         )
         result = await self.call_workflow(self.comparison_workflow_id, workflow_input)
         return normalize_comparison_workflow_result(result)
