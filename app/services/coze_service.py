@@ -22,13 +22,12 @@ def _to_int(value: Any, default: int = 0) -> int:
 def map_document_risk_level(value: str | None) -> str:
     """将 Coze 文档中的中文风险等级映射为后端枚举值。"""
     risk_level = (value or "").strip()
-    if risk_level in {"高风险", "high"}:
+    if risk_level in {"高", "高风险", "high"}:
         return "high"
-    if risk_level in {"中风险", "medium", "mid"}:
+    if risk_level in {"中", "中风险", "medium", "mid"}:
         return "medium"
-    if risk_level in {"低风险", "low"}:
+    if risk_level in {"低", "低风险", "low"}:
         return "low"
-    # "通过" 视为无风险，返回 low
     if risk_level in {"通过", "pass"}:
         return "low"
     return "low"

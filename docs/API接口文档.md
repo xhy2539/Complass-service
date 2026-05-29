@@ -1,14 +1,5 @@
 # 合规罗盘 API 接口文档
 
-## 基本信息
-
-- **服务地址**: `http://127.0.0.1:8000`
-- **API 版本**: v1
-- **Base Path**: `/api/v1`
-- **认证方式**: Bearer Token (JWT)
-- **支持文件格式**: `.docx`, `.pdf`, `.txt`
-- **文件大小限制**: 10MB
-
 ---
 
 ## 目录
@@ -17,9 +8,11 @@
 2. [单合同审查](#2-单合同审查)
 3. [合同版本比对](#3-合同版本比对)
 4. [风险点人工确认](#4-风险点人工确认)
-5. [Coze AI 接口（Coze 端对接）](#5-coze-ai-接口coze-端对接)
+5. [Coze 工作流对接（v0.2）](#5-coze-工作流对接v02)
 6. [枚举值说明](#6-枚举值说明)
 7. [通用错误码](#7-通用错误码)
+8. [规则库管理](#8-规则库管理)
+9. [优化合同版本与脱敏说明](#9-优化合同版本与脱敏说明)
 
 ---
 
@@ -112,8 +105,9 @@
 |------|------|------|------|
 | file | file | 是 | 合同文件（docx/pdf/txt） |
 | use_coze | boolean | 否 | 是否启用 Coze 分析（默认 true） |
+| contract_type | string | 否 | 合同类型（默认"通用"，如"采购合同"、"服务合同"） |
 
-**流程**: 上传文件 → 创建任务 → 解析文档 → Coze 分析 → 保存结果
+**流程**: 上传文件 → 创建任务 → 解析文档 → 脱敏 → Coze 分析 → 还原脱敏 → 保存结果
 
 **响应** (201 Created):
 ```json
@@ -152,10 +146,15 @@
     "risk_summary": {
       "high": 0,
       "medium": 1,
-      "low": 2
+      "low": 2,
+      "passed": 50
     },
     "suggest_deep_review": false,
     "status": "completed",
+    "sanitization_status": "completed",
+    "sanitization_error": null,
+    "rule_version_id": "version-uuid",
+    "contract_type": "通用",
     "created_at": "2026-05-07T10:00:00",
     "completed_at": "2026-05-07T10:00:05",
     "risk_count": 3,
@@ -191,6 +190,16 @@
       "category": "付款条款",
       "evidence": "合同正文中未找到关于付款时间、付款方式的明确条款",
       "impact": "可能导致付款纠纷，影响合同执行",
+      "replace_text": "合同总金额为人民币壹拾万元整",
+      "rule_code": "COM-FIN-001",
+      "rule_snapshot_json": {
+        "rule_code": "COM-FIN-001",
+        "contract_type": "通用",
+        "review_module": "财务",
+        "risk_name": "合同金额不明确",
+        "default_risk_level": "高",
+        "suggestion_template": "建议明确合同总金额..."
+      },
       "position": {
         "paragraph_index": 5,
         "char_offset_start": 100,
@@ -261,8 +270,9 @@
 | old_file | file | 是 | 旧版本合同文件 |
 | new_file | file | 是 | 新版本合同文件 |
 | enhance | boolean | 否 | 是否启用 Coze 增强（默认 true） |
+| contract_type | string | 否 | 合同类型（默认"通用"） |
 
-**流程**: 上传两个文件 → 创建任务 → 解析文档 → 文本 diff → Coze 增强 → 保存结果
+**流程**: 上传两个文件 → 创建任务 → 解析文档 → 脱敏 → 文本 diff → Coze 增强 → 还原脱敏 → 保存结果
 
 **响应** (201 Created):
 ```json
@@ -275,14 +285,16 @@
     "type": "docx",
     "char_count": 5000,
     "page_count": 5,
-    "paragraph_count": 50
+    "paragraph_count": 50,
+    "sentence_count": 120
   },
   "new_file": {
     "name": "新合同.docx",
     "type": "docx",
     "char_count": 5200,
     "page_count": 5,
-    "paragraph_count": 52
+    "paragraph_count": 52,
+    "sentence_count": 125
   },
   "diff_stats": {
     "total": 10,
@@ -497,312 +509,300 @@
 
 ---
 
-## 5. Coze AI 接口（Coze 端对接）
+## 5. Coze 工作流对接（v0.2）
 
-### 5.1 单合同风险分析
+### 5.1 审查工作流（review）
 
-**接口**: `POST /api/v1/coze/contract/review`
+**Coze API**: `POST https://api.coze.cn/v1/workflow/run`
 
-**认证**: Internal（后端内部调用）
+**传入 parameters（input 字段内 JSON）**:
 
-**请求体**:
 ```json
 {
-  "task_type": "contract_review",
-  "file_name": "合同.docx",
-  "file_type": "docx",
-  "text": "合同全文（脱敏后）...",
-  "char_count": 5000,
-  "paragraph_count": 50
+  "file_id": "上传到Coze的文件ID",
+  "contract_type": "通用",
+  "rule_version_id": "version-uuid",
+  "rules": [
+    {
+      "rule_code": "COM-FIN-001",
+      "contract_type": "通用",
+      "review_module": "财务",
+      "risk_name": "合同金额不明确",
+      "check_point": "是否明确合同总金额、币种、大小写金额",
+      "trigger_condition": "合同仅写费用另行协商或未写明总金额",
+      "default_risk_level": "高",
+      "suggestion_template": "建议明确合同总金额、币种、大小写金额及费用构成",
+      "example_clause": "合同费用由双方另行确认。"
+    }
+  ],
+  "sanitized_text": "脱敏后的合同全文（新）",
+  "sanitization_enabled": true
 }
 ```
 
 **Coze 工作流需返回**:
+
 ```json
 {
-  "success": true,
-  "overall_conclusion": "合同风险较低，未发现明显异常条款",
-  "risk_summary": {
-    "high": 0,
-    "medium": 1,
-    "low": 2
-  },
-  "risk_points": [
+  "agreeCount": 50,
+  "highlevelriskCount": 1,
+  "mediumlevelriskCount": 2,
+  "lowlevelriskCount": 3,
+  "output": [
     {
-      "title": "付款条款待明确",
-      "level": "medium",
-      "category": "付款条款",
-      "reason": "合同中未明确约定具体付款时间和方式",
-      "evidence": "合同正文中未找到关于付款时间、付款方式的明确条款",
-      "impact": "可能导致付款纠纷，影响合同执行",
-      "suggestion": "建议补充付款条款明细，包括付款时间、付款方式、付款账户等",
-      "position": null
-    }
-  ],
-  "suggest_deep_review": false,
-  "message": ""
-}
-```
-
-**风险点字段说明**:
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| title | string | 是 | 风险标题 |
-| level | string | 是 | 风险等级：`high` / `medium` / `low` |
-| category | string | 否 | 风险分类（如：付款条款、违约责任等） |
-| reason | string | 否 | 风险原因 |
-| evidence | string | 否 | 证据材料（引用原文） |
-| impact | string | 否 | 影响程度 |
-| suggestion | string | 否 | 建议处理方式 |
-| position | object | 否 | 位置信息（见下方） |
-
-**position 位置信息**:
-```json
-{
-  "paragraph_index": 5,
-  "char_offset_start": 100,
-  "char_offset_end": 200
-}
-```
-
----
-
-### 5.2 合同版本比对语义增强
-
-**接口**: `POST /api/v1/coze/contract/comparison`
-
-**认证**: Internal（后端内部调用）
-
-**请求体**:
-```json
-{
-  "task_type": "contract_comparison",
-  "old_text": "旧合同全文（脱敏后）...",
-  "new_text": "新合同全文（脱敏后）...",
-  "diff_stats": {
-    "total": 10,
-    "added": 3,
-    "deleted": 2,
-    "modified": 5
-  },
-  "diff_count": 10,
-  "diff_texts": [
-    {
-      "type": "added",
-      "content": "新增条款：保密义务"
-    },
-    {
-      "type": "modified",
-      "content": "付款期限从30天改为15天"
+      "key": "合同金额不明确",
+      "risk": "高",
+      "tip": "合同仅写费用另行协商，未明确总金额",
+      "advice": "建议在合同第二条明确约定合同总金额及费用构成",
+      "content": "合同费用由双方另行协商确定。",
+      "replace_text": "合同总金额为人民币XXX元（大写：XXX元整）",
+      "rule_code": "COM-FIN-001"
     }
   ]
 }
 ```
 
-**Coze 工作流需返回**:
+**output 字段说明**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| key | string | 风险标题 |
+| risk | string | 风险等级：高/中/低/"通过"（通过项会被过滤） |
+| tip | string | 风险原因 |
+| advice | string | 修改建议 |
+| content | string | 原文证据 |
+| replace_text | string | 建议替换文本 |
+| rule_code | string | **v0.2 新增**，命中规则的编号 |
+
+### 5.2 比对工作流（comparison）
+
+**Coze API**: `POST https://api.coze.cn/v1/workflow/run`
+
+**传入 parameters**:
+
 ```json
 {
-  "success": true,
-  "enhanced": [
-    {
-      "original": "付款期限从30天改为15天",
-      "change_type": "modified",
-      "category": "付款条款",
-      "summary": "付款期限从30天缩短至15天，需确认是否影响甲方资金安排",
-      "risk_level": "medium",
-      "evidence": "旧：30日 → 新：15日",
-      "impact": "缩短付款期限可能增加甲方资金压力",
-      "suggestion": "建议确认是否影响甲方资金安排"
-    }
+  "task_type": "contract_comparison",
+  "old_text": "脱敏后旧合同全文",
+  "new_text": "脱敏后新合同全文",
+  "diff_stats": { "total": 10, "added": 3, "deleted": 2, "modified": 5 },
+  "diff_texts": [
+    { "type": "modified", "content": "修改内容：公司A应向公司B支付100,000元 → 150,000元" },
+    { "type": "added", "content": "新增内容：保密义务条款" },
+    { "type": "deleted", "content": "删除内容：原第八条免责声明" }
   ],
-  "total_risks": 2,
-  "message": ""
+  "contract_type": "通用",
+  "rule_version_id": "version-uuid",
+  "rules": [{ "rule_code": "COM-FIN-001", ... }]
 }
 ```
 
-**enhanced 字段说明**:
+**Coze 工作流需返回**:
 
-| 字段 | 类型 | 必填 | 说明 |
+```json
+{
+  "output": {
+    "diff_list": [
+      {
+        "type": "modified",
+        "risk_level": "中",
+        "old": "公司A应向公司B支付100,000元",
+        "new": "公司A应向公司B支付150,000元",
+        "analysis": "付款金额从100,000元变更为150,000元，需确认变更依据",
+        "advice": "建议在合同中注明金额变更的原因",
+        "rule_id": "COM-FIN-001"
+      }
+    ],
+    "stats": { "addCount": 3, "deleteCount": 2, "modifyCount": 5 },
+    "summary": "本次修订共10处差异..."
+  }
+}
+```
+
+**diff_list 字段说明**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| type | string | 差异类型：added/deleted/modified |
+| risk_level | string | 风险等级：高/中/低 |
+| old | string | 旧版原文 |
+| new | string | 新版原文 |
+| analysis | string | 风险分析 |
+| advice | string | 修改建议 |
+| rule_id | string | 命中规则编号|
+
+
+## 8. 规则库管理
+
+所有规则库接口均需要 Bearer Token。
+
+### 8.1 查询规则列表
+
+**接口**: `GET /api/v1/rules`
+
+**查询参数**:
+
+| 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| original | string | 是 | 原始差异内容 |
-| change_type | string | 是 | 差异类型：`added` / `deleted` / `modified` |
-| category | string | 否 | 风险分类 |
-| summary | string | 否 | 语义增强摘要 |
-| risk_level | string | 否 | 风险等级：`high` / `medium` / `low` |
-| evidence | string | 否 | 证据材料 |
-| impact | string | 否 | 影响程度 |
-| suggestion | string | 否 | 建议处理方式 |
+| skip | integer | 否 | 跳过数量，默认 0 |
+| limit | integer | 否 | 返回数量，默认 20 |
+| version_id | string | 否 | 规则版本 ID |
+| contract_type | string | 否 | 合同类型 |
+| enabled | boolean | 否 | 是否启用 |
 
----
-
-### 5.3 风险点位置定位（可选）
-
-**接口**: `POST /api/v1/coze/risk/locate`
-
-**认证**: Internal（后端内部调用）
-
-**请求体**:
+**响应** (200 OK):
 ```json
 {
-  "task_type": "risk_location",
-  "risk_title": "付款条款待明确",
-  "risk_reason": "合同中未明确约定具体付款时间和方式",
-  "risk_suggestion": "建议补充付款条款明细",
-  "text": "合同全文（脱敏后）...",
-  "paragraphs": [
+  "rules": [
     {
-      "text": "合同标题",
-      "char_offset_start": 0,
-      "char_offset_end": 10,
-      "page_number": 1
+      "id": "rule-uuid",
+      "version_id": "version-uuid",
+      "rule_code": "COM-FIN-001",
+      "contract_type": "通用",
+      "review_module": "财务",
+      "risk_name": "合同金额不明确",
+      "check_point": "是否明确合同总金额、币种、大小写金额",
+      "trigger_condition": "合同仅写费用另行协商或未写明总金额",
+      "default_risk_level": "高",
+      "suggestion_template": "建议明确合同总金额、币种、大小写金额及费用构成",
+      "example_clause": "合同费用由双方另行确认。",
+      "enabled": true,
+      "created_at": "2026-05-07T10:00:00",
+      "updated_at": "2026-05-07T10:00:00"
     }
   ],
-  "char_count": 5000,
-  "current_location": null
+  "total": 59,
+  "skip": 0,
+  "limit": 20
 }
 ```
 
-**Coze 工作流需返回**:
+### 8.2 创建、编辑、删除和启停规则
+
+```http
+POST /api/v1/rules
+PATCH /api/v1/rules/{rule_id}
+DELETE /api/v1/rules/{rule_id}
+PATCH /api/v1/rules/{rule_id}/enabled
+```
+
+创建规则请求体：
+
+```json
+{
+  "rule_code": "COM-FIN-001",
+  "contract_type": "通用",
+  "review_module": "财务",
+  "risk_name": "合同金额不明确",
+  "check_point": "是否明确合同总金额、币种、大小写金额",
+  "trigger_condition": "合同仅写费用另行协商或未写明总金额",
+  "default_risk_level": "高",
+  "suggestion_template": "建议明确合同总金额、币种、大小写金额及费用构成",
+  "example_clause": "合同费用由双方另行确认。",
+  "enabled": true
+}
+```
+
+`default_risk_level` 只允许：`高`、`中`、`低`。
+
+### 8.3 CSV 批量导入规则
+
+**接口**: `POST /api/v1/rules/import-csv`
+
+**Content-Type**: `multipart/form-data`
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| file | file | 是 | 规则 CSV 文件 |
+
+导入成功后会生成草稿规则版本，需激活后才参与新任务审查。导入失败时返回行号、字段和失败原因。
+
+**响应** (200 OK):
 ```json
 {
   "success": true,
-  "matched_paragraph_index": 5,
-  "char_offset_start": 100,
-  "char_offset_end": 200,
-  "matched_text": "甲方应按照约定履行付款义务",
-  "confidence": 0.85,
-  "reasoning": "通过关键词匹配找到相关段落",
-  "message": ""
+  "version_id": "version-uuid",
+  "version_no": 2,
+  "imported_count": 59,
+  "errors": []
 }
+```
+
+### 8.4 规则版本
+
+```http
+GET /api/v1/rule-versions
+POST /api/v1/rule-versions
+POST /api/v1/rule-versions/{version_id}/activate
+```
+
+说明：
+
+- 同一时间只有一个激活规则版本。
+- 审查和比对任务会记录当时使用的 `rule_version_id` 和规则快照。
+- 规则修改不影响历史审查结果。
+- 启用 Coze 且没有激活规则版本时，审查/比对接口会返回明确错误。
+
+**版本列表响应** (`GET /api/v1/rule-versions`):
+```json
+[
+  {
+    "id": "version-uuid",
+    "version_no": 2,
+    "name": "CSV导入规则版本",
+    "description": "CSV导入",
+    "status": "active",
+    "activated_at": "2026-05-07T12:00:00",
+    "created_at": "2026-05-07T10:00:00",
+    "updated_at": "2026-05-07T12:00:00",
+    "rule_count": 59
+  }
+]
 ```
 
 ---
 
-### 5.4 文本结构分析（可选）
+## 9. 优化合同版本与脱敏说明
 
-**接口**: `POST /api/v1/coze/text/structure`
+### 9.1 采纳建议生成优化合同
 
-**认证**: Internal（后端内部调用）
+**接口**: `POST /api/v1/reviews/{task_id}/suggestions/apply`
 
 **请求体**:
+
 ```json
 {
-  "task_type": "text_structure_analysis",
-  "file_name": "合同.docx",
-  "file_type": "docx",
-  "text": "合同全文（脱敏后）...",
-  "existing_paragraphs": [],
-  "char_count": 5000
+  "risk_ids": ["risk-uuid-1", "risk-uuid-2"],
+  "title": "合同优化版"
 }
 ```
 
-**Coze 工作流需返回**:
+后端会根据风险点中的 `replace_text` 和位置信息生成新的优化合同版本，原始合同不会被覆盖。
+
+**响应** (200 OK):
 ```json
 {
   "success": true,
-  "structured_paragraphs": [
-    {
-      "text": "合同标题",
-      "index": 0,
-      "paragraph_type": "heading1",
-      "paragraph_level": 1,
-      "is_key_clause": false,
-      "sentence_count": 1
-    }
-  ],
-  "paragraph_count": 50,
-  "sentence_count": 120,
-  "key_clauses": ["违约责任条款", "保密条款"],
-  "message": ""
+  "version": {
+    "id": "version-uuid",
+    "review_task_id": "task-uuid",
+    "version_no": 1,
+    "title": "合同优化版",
+    "text": "优化后的合同全文...",
+    "accepted_risk_ids": ["risk-uuid-1", "risk-uuid-2"],
+    "created_by_user_id": "user-uuid",
+    "created_at": "2026-05-07T10:00:00"
+  },
+  "message": "优化合同版本已生成"
 }
 ```
 
----
+### 9.2 查询和导出优化合同版本
 
-## 6. 枚举值说明
-
-### 任务状态 (TaskStatus)
-
-| 值 | 说明 |
-|------|------|
-| `pending` | 待处理 |
-| `processing` | 处理中 |
-| `completed` | 已完成 |
-| `failed` | 失败 |
-
-### 风险等级 (RiskLevel)
-
-| 值 | 说明 |
-|------|------|
-| `high` | 高风险 |
-| `medium` | 中风险 |
-| `low` | 低风险 |
-
-### 风险点状态 (RiskStatus)
-
-| 值 | 说明 |
-|------|------|
-| `pending` | 待处理（初始状态） |
-| `confirmed` | 已确认 |
-| `ignored` | 已忽略 |
-
-### 差异类型 (change_type)
-
-| 值 | 说明 |
-|------|------|
-| `added` | 新增内容 |
-| `deleted` | 删除内容 |
-| `modified` | 修改内容 |
-
----
-
-## 7. 通用错误码
-
-| HTTP 状态码 | 说明 |
-|-------------|------|
-| 400 | 请求参数错误 |
-| 401 | 未认证或 Token 无效 |
-| 403 | 无权访问该资源 |
-| 404 | 资源不存在 |
-| 413 | 文件过大（超过 10MB） |
-| 415 | 不支持的文件格式 |
-| 422 | 文档解析失败 |
-| 502 | Coze 服务调用失败 |
-
-### 错误响应格式
-
-```json
-{
-  "detail": "错误详情描述"
-}
+```http
+GET /api/v1/reviews/{task_id}/optimized-versions
+GET /api/v1/reviews/{task_id}/optimized-versions/{version_id}
+POST /api/v1/reviews/{task_id}/optimized-versions/{version_id}/export
 ```
 
----
-
-## 附录
-
-### A. 段落类型 (paragraph_type)
-
-| 值 | 说明 |
-|------|------|
-| `heading1` | 一级标题 |
-| `heading2` | 二级标题（如：第X条） |
-| `heading3` | 三级标题（如：一、二、三） |
-| `body` | 正文 |
-
-### B. 关键条款识别关键词
-
-后端会自动识别以下关键词所在的段落为关键条款：
-- 违约、赔偿、责任、罚款
-- 解除、终止
-- 付款、金额、交付
-- 保密、知识产权
-
-### C. 脱敏规则
-
-后端会自动对以下信息进行脱敏处理：
-- 手机号 → `[手机号]`
-- 固定电话 → `[电话号码]`
-- 邮箱 → `[邮箱]`
-- 银行卡号 → `[银行卡]`
+导出的文件只包含优化后的合同正文，不包含风险报告、批注和风险列表。
