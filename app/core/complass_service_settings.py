@@ -12,7 +12,7 @@ class ComplassServiceSettings(BaseSettings):
     app_version: str = "0.1.0"
     service_name: str = "complass-service"
     app_env: str = "local"
-    database_url: str = "mysql+pymysql://complass:123456@127.0.0.1:3306/complass?charset=utf8mb4"
+    database_url: str = "mysql+pymysql://complass:123456@mysql:3306/complass?charset=utf8mb4"
     coze_api_base_url: str = "https://api.coze.cn"
     coze_access_token: str = ""
     coze_api_token: str = ""
