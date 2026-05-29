@@ -159,6 +159,8 @@ pipeline {
                         ssh -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" "
                             set -eux
                             cd ${DEPLOY_DIR}
+                            git checkout -- . 2>/dev/null || true
+                            git stash clear 2>/dev/null || true
                             git pull --ff-only
                             docker build --no-cache -t complass-service:latest .
                             docker compose up -d

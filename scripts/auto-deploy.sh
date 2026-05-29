@@ -40,6 +40,10 @@ log "New commits: ${LOCAL_HEAD} -> ${REMOTE_HEAD}"
 # Snapshot the currently running image ID for possible rollback.
 OLD_IMAGE_ID="$(docker inspect --format='{{.Image}}' complass-service 2>/dev/null || true)"
 
+# Drop any uncommitted local edits so pull can proceed
+git checkout -- . 2>/dev/null || true
+git stash clear 2>/dev/null || true
+
 git pull --ff-only origin dev
 
 log "Building image..."
