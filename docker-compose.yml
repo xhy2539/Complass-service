@@ -47,4 +47,4 @@ services:
 
 networks:
   complass:
-    driver: bridge
+    external: true
