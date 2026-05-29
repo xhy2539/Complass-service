@@ -36,8 +36,6 @@ from app.schemas.review import RiskStatsSchema
 from app.services.document_exporter import DocumentExporter
 from app.services.document_parser import DocumentParseError
 from app.services.document_parser import DocumentParser
-from app.services.rule_service import build_enabled_rules_snapshot
-from app.services.rule_service import find_rule_snapshot
 from app.services.sanitization_service import restore_text_from_mapping
 from app.services.sanitization_service import sanitize_contract_text
 from app.services.sanitization_service import sanitize_docx_bytes
@@ -367,20 +365,6 @@ async def create_review_task(
     if sanitization.errors:
         raise HTTPException(status_code=422, detail="; ".join(sanitization.errors))
 
-    rule_version = None
-    rules_snapshot: list[dict] = []
-    if use_coze:
-        try:
-            rule_version, rules_snapshot = build_enabled_rules_snapshot(
-                db, contract_type
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        if not rules_snapshot:
-            raise HTTPException(
-                status_code=400, detail="当前合同类型没有可用的启用规则"
-            )
-
     # 创建审查任务
     task_id = _uuid()
     task = ReviewTask(
@@ -397,8 +381,8 @@ async def create_review_task(
         sanitized_text=sanitization.sanitized_text,
         sanitization_mapping_json=sanitization.mappings,
         sanitization_status="completed",
-        rule_version_id=rule_version.id if rule_version else None,
-        rules_snapshot_json=rules_snapshot,
+        rule_version_id=None,
+        rules_snapshot_json=[],
         contract_type=contract_type,
         paragraphs_json=[p.__dict__ for p in parse_result.paragraphs],
         sentences_json=parse_result.sentences,
@@ -490,8 +474,6 @@ async def create_review_task(
                 content=sanitized_docx,
                 filename=parse_result.file_name,
                 content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                rules=rules_snapshot,
-                rule_version_id=rule_version.id if rule_version else None,
                 contract_type=contract_type,
                 sanitized_text=sanitization.sanitized_text,
             )
@@ -553,7 +535,7 @@ async def create_review_task(
                         rp_data.get("replace_text") or "", sanitization.mappings
                     ),
                     rule_code=rule_code,
-                    rule_snapshot_json=find_rule_snapshot(rules_snapshot, rule_code),
+                    rule_snapshot_json=None,
                     position=position,
                     sentence_id=matched_sentence["id"] if matched_sentence else None,
                     status=RiskStatus.PENDING,

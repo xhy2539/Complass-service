@@ -36,7 +36,7 @@ rule_router = APIRouter(tags=["规则库管理"])
 @rule_router.get("/rules", response_model=RuleListResponse)
 async def get_rules(
     skip: int = 0,
-    limit: int = 20,
+    limit: int = 100,
     version_id: Optional[str] = None,
     contract_type: Optional[str] = None,
     enabled: Optional[bool] = None,

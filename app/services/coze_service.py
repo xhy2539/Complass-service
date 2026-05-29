@@ -68,38 +68,32 @@ def build_comparison_workflow_input(
 
 def build_review_workflow_input(
     file_id: str,
-    rules: list[dict] | None = None,
-    rule_version_id: str | None = None,
     contract_type: str = "通用",
     sanitized_text: str | None = None,
 ) -> dict[str, str]:
-    """构建合同审查 Coze 工作流输入。"""
+    """构建合同审查 Coze 工作流输入（规则由 Coze 自行调 API 获取）。"""
     payload = {
         "file_id": file_id,
         "contract_type": contract_type,
-        "rule_version_id": rule_version_id,
-        "rules": rules or [],
         "sanitized_text": sanitized_text or "",
         "sanitization_enabled": bool(sanitized_text),
+        "audit_rules_api_url": "http://complass-service:8080/api/audit-rules",
     }
     return {"input": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}
 
 
 def build_review_workflow_object_input(
     file_id: str,
-    rules: list[dict] | None = None,
-    rule_version_id: str | None = None,
     contract_type: str = "通用",
     sanitized_text: str | None = None,
 ) -> dict[str, str]:
-    """构建合同审查 Coze 工作流输入，作为兼容备选。"""
+    """构建合同审查 Coze 工作流输入（规则由 Coze 自行调 API 获取），兼容备选。"""
     payload = {
         "file_id": file_id,
         "contract_type": contract_type,
-        "rule_version_id": rule_version_id,
-        "rules": rules or [],
         "sanitized_text": sanitized_text or "",
         "sanitization_enabled": bool(sanitized_text),
+        "audit_rules_api_url": "http://complass-service:8080/api/audit-rules",
     }
     return {"input": json.dumps(payload, ensure_ascii=False)}
 
@@ -425,12 +419,10 @@ class CozeService:
         content: bytes,
         filename: str,
         content_type: str | None = None,
-        rules: list[dict] | None = None,
-        rule_version_id: str | None = None,
         contract_type: str = "通用",
         sanitized_text: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, int]]:
-        """上传合同文件后携带规则调用合同审查工作流。返回 (业务结果, token用量)。"""
+        """上传合同文件后调用合同审查工作流。规则由 Coze 自行调 API 获取。返回 (业务结果, token用量)。"""
         file_id = await self.upload_file(content, filename, content_type)
         logger.info(
             f"[Coze] 开始审查合同: file_id={file_id}, workflow_id={self.review_workflow_id}"
@@ -440,8 +432,6 @@ class CozeService:
                 self.review_workflow_id,
                 build_review_workflow_input(
                     file_id,
-                    rules=rules,
-                    rule_version_id=rule_version_id,
                     contract_type=contract_type,
                     sanitized_text=sanitized_text,
                 ),
@@ -452,8 +442,6 @@ class CozeService:
                 self.review_workflow_id,
                 build_review_workflow_object_input(
                     file_id,
-                    rules=rules,
-                    rule_version_id=rule_version_id,
                     contract_type=contract_type,
                     sanitized_text=sanitized_text,
                 ),
