@@ -20,6 +20,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 20
+    networks:
+      - complass
 
   complass-service:
     image: ${IMAGE:-complass-service:latest}
@@ -40,3 +42,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    networks:
+      - complass
+
+networks:
+  complass:
+    driver: bridge
