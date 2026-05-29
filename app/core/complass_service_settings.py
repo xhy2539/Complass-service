@@ -17,7 +17,7 @@ class ComplassServiceSettings(BaseSettings):
     coze_access_token: str = ""
     coze_api_token: str = ""
     coze_workflow_id: str = ""
-    coze_comparison_workflow_id: str = "7634842444869861416"
+    coze_comparison_workflow_id: str = "7640097297989451811"
     coze_review_workflow_id: str = "7636289402251198473"
     coze_workflow_timeout_seconds: float = 120.0
     coze_upload_timeout_seconds: float = 120.0
