@@ -10,6 +10,8 @@ from fastapi import HTTPException
 from fastapi import status
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.security import HTTPBearer
+from pydantic import BaseModel
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app.core.complass_service_settings import get_complass_service_settings
@@ -178,3 +180,35 @@ def get_current_user(
         )
 
     return user
+
+
+class SetTokenQuotaRequest(BaseModel):
+    user_id: str = Field(..., description="目标用户 ID")
+    token_quota: int = Field(..., ge=0, description="Token 配额，0 表示无限制")
+
+
+@auth_router.patch("/admin/token-quota")
+def set_user_token_quota(
+    request: SetTokenQuotaRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """管理员设置用户的 Token 配额。"""
+    settings = get_complass_service_settings()
+    admin_email = settings.admin_email or "1121799294@qq.com"
+    if current_user.email != admin_email:
+        raise HTTPException(status_code=403, detail="仅管理员可操作")
+
+    target_user = db.query(User).filter(User.id == request.user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    target_user.token_quota = request.token_quota
+    db.commit()
+
+    return {
+        "user_id": target_user.id,
+        "email": target_user.email,
+        "token_quota": target_user.token_quota,
+        "token_used": target_user.token_used,
+    }

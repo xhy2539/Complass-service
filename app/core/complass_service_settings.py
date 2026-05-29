@@ -29,6 +29,9 @@ class ComplassServiceSettings(BaseSettings):
     # CORS 允许的来源列表，逗号分隔
     cors_allow_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # 管理员邮箱
+    admin_email: str = "1121799294@qq.com"
+
     # JWT 配置
     jwt_secret_key: str = (
         "your-super-secret-key-change-in-production"  # 生产环境必须更换

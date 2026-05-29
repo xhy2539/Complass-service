@@ -21,6 +21,7 @@ class ComparisonTaskSchema(BaseModel):
     contract_type: str = "通用"
     diff_stats: Optional[dict] = None
     total_risks: int = 0
+    token_cost: Optional[int] = None
     status: str
     created_at: Optional[str] = None
     completed_at: Optional[str] = None

@@ -328,9 +328,17 @@ async def create_comparison_task(
 
     # Coze 语义增强
     if enhance:
+        if (
+            current_user.token_quota > 0
+            and current_user.token_used >= current_user.token_quota
+        ):
+            raise HTTPException(
+                status_code=402, detail="Token 配额已用完，请联系管理员升级"
+            )
+
         try:
             coze_service = get_coze_service()
-            coze_result = await coze_service.enhance_diff_result(
+            coze_result, usage = await coze_service.enhance_diff_result(
                 {
                     "old_text": old_sanitization.sanitized_text,
                     "new_text": new_sanitization.sanitized_text,
@@ -344,6 +352,10 @@ async def create_comparison_task(
 
             task.coze_enhanced = coze_result.get("enhanced", [])
             task.total_risks = coze_result.get("total_risks", 0)
+            task.token_cost = usage.get("token_count", 0)
+            current_user.token_used = current_user.token_used + usage.get(
+                "token_count", 0
+            )
             coze_stats = coze_result.get("stats") or {}
             if coze_stats:
                 task.diff_stats = {

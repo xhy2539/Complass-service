@@ -472,11 +472,19 @@ async def create_review_task(
 
     # 如果启用 Coze，分析风险
     if use_coze:
+        if (
+            current_user.token_quota > 0
+            and current_user.token_used >= current_user.token_quota
+        ):
+            raise HTTPException(
+                status_code=402, detail="Token 配额已用完，请联系管理员升级"
+            )
+
         try:
             from app.services.coze_service import get_coze_service
 
             coze_service = get_coze_service()
-            coze_result = await coze_service.review_contract_file(
+            coze_result, usage = await coze_service.review_contract_file(
                 content=content,
                 filename=parse_result.file_name,
                 content_type=file.content_type,
@@ -493,6 +501,10 @@ async def create_review_task(
             )
             task.suggest_deep_review = coze_result.get("suggest_deep_review", False)
             task.coze_message = coze_result.get("message", "")
+            task.token_cost = usage.get("token_count", 0)
+            current_user.token_used = current_user.token_used + usage.get(
+                "token_count", 0
+            )
             task.status = TaskStatus.COMPLETED
             task.completed_at = datetime.utcnow()
 

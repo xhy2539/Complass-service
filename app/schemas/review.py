@@ -113,6 +113,7 @@ class ReviewTaskSchema(BaseModel):
     completed_at: Optional[str] = None
     risk_count: int = 0
     risk_stats: Optional[RiskStatsSchema] = None
+    token_cost: Optional[int] = None
     # 新增：段落和句子列表
     paragraphs: list[ParagraphSchema] = []
     sentences: list[SentenceSchema] = []

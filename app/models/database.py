@@ -44,6 +44,10 @@ class User(Base):
     )
     last_login_at = Column(DateTime, nullable=True)
 
+    # Token quota & usage (0 = unlimited)
+    token_quota = Column(Integer, default=0, nullable=False)
+    token_used = Column(Integer, default=0, nullable=False)
+
     def to_dict(self) -> dict:
         """转换为字典格式（不包含密码）。"""
         return {
@@ -56,6 +60,8 @@ class User(Base):
             "last_login_at": self.last_login_at.isoformat()
             if self.last_login_at
             else None,
+            "token_quota": self.token_quota,
+            "token_used": self.token_used,
         }
 
 
@@ -229,6 +235,7 @@ class ReviewTask(Base):
     risk_summary = Column(JSON, nullable=True)  # {"high": 0, "medium": 0, "low": 0}
     suggest_deep_review = Column(Boolean, default=False)
     coze_message = Column(Text, nullable=True)
+    token_cost = Column(Integer, nullable=True)
 
     # 规则版本快照
     rule_version_id = Column(
@@ -276,6 +283,7 @@ class ReviewTask(Base):
             "overall_conclusion": self.overall_conclusion,
             "risk_summary": self.risk_summary,
             "suggest_deep_review": self.suggest_deep_review,
+            "token_cost": self.token_cost,
             "status": self.status.value if self.status else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
@@ -537,6 +545,7 @@ class ComparisonTask(Base):
     # Coze 增强结果
     coze_enhanced = Column(JSON, nullable=True)
     total_risks = Column(Integer, default=0)
+    token_cost = Column(Integer, nullable=True)
 
     # 规则版本快照
     rule_version_id = Column(
@@ -586,6 +595,7 @@ class ComparisonTask(Base):
             "contract_type": self.contract_type,
             "diff_stats": self.diff_stats,
             "total_risks": self.total_risks,
+            "token_cost": self.token_cost,
             "status": self.status.value if self.status else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "completed_at": self.completed_at.isoformat()

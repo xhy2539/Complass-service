@@ -32,6 +32,8 @@ CREATE TABLE `users` (
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
   `last_login_at` datetime DEFAULT NULL,
+  `token_quota` int NOT NULL DEFAULT '0',
+  `token_used` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `ix_users_email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -64,6 +66,7 @@ CREATE TABLE `review_tasks` (
   `risk_summary` json DEFAULT NULL,
   `suggest_deep_review` tinyint(1) DEFAULT NULL,
   `coze_message` text,
+  `token_cost` int DEFAULT NULL,
   `status` enum('PENDING','PROCESSING','COMPLETED','FAILED') NOT NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
@@ -186,6 +189,7 @@ CREATE TABLE `comparison_tasks` (
   `position_info_json` json DEFAULT NULL,
   `coze_enhanced` json DEFAULT NULL,
   `total_risks` int DEFAULT NULL,
+  `token_cost` int DEFAULT NULL,
   `status` enum('PENDING','PROCESSING','COMPLETED','FAILED') NOT NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,

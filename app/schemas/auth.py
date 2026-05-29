@@ -44,6 +44,8 @@ class UserInfo(BaseModel):
     is_verified: bool = False
     created_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
+    token_quota: int = 0
+    token_used: int = 0
 
     class Config:
         from_attributes = True

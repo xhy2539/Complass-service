@@ -352,11 +352,21 @@ class CozeService:
                     f"[Coze] 原始响应 body: {json.dumps(response_json, ensure_ascii=False)[:2000]}"
                 )
 
+                raw_usage = response_json.get("usage", {})
+                usage = {
+                    "token_count": int(raw_usage.get("token_count", 0) or 0),
+                    "input_count": int(raw_usage.get("input_count", 0) or 0),
+                    "output_count": int(raw_usage.get("output_count", 0) or 0),
+                }
+
                 result = extract_business_data(response_json)
                 logger.info(
                     f"[Coze] 解析后业务数据: {json.dumps(result, ensure_ascii=False)[:2000]}"
                 )
-                return result
+                logger.info(
+                    f"[Coze] Token 用量: {json.dumps(usage, ensure_ascii=False)}"
+                )
+                return {"business_data": result, "usage": usage}
 
             except httpx.HTTPError as e:
                 logger.error(f"[Coze] 网络错误: {type(e).__name__}: {e!r}")
@@ -419,14 +429,14 @@ class CozeService:
         rule_version_id: str | None = None,
         contract_type: str = "通用",
         sanitized_text: str | None = None,
-    ) -> dict[str, Any]:
-        """上传合同文件后携带规则调用合同审查工作流。"""
+    ) -> tuple[dict[str, Any], dict[str, int]]:
+        """上传合同文件后携带规则调用合同审查工作流。返回 (业务结果, token用量)。"""
         file_id = await self.upload_file(content, filename, content_type)
         logger.info(
             f"[Coze] 开始审查合同: file_id={file_id}, workflow_id={self.review_workflow_id}"
         )
         try:
-            result = await self.call_workflow(
+            raw_result = await self.call_workflow(
                 self.review_workflow_id,
                 build_review_workflow_input(
                     file_id,
@@ -438,7 +448,7 @@ class CozeService:
             )
         except CozeServiceError:
             logger.warning("[Coze] JSON格式调用失败，尝试对象格式重试")
-            result = await self.call_workflow(
+            raw_result = await self.call_workflow(
                 self.review_workflow_id,
                 build_review_workflow_object_input(
                     file_id,
@@ -448,18 +458,14 @@ class CozeService:
                     sanitized_text=sanitized_text,
                 ),
             )
-        return normalize_review_workflow_result(result)
+        return normalize_review_workflow_result(
+            raw_result["business_data"]
+        ), raw_result["usage"]
 
-    async def enhance_diff_result(self, diff_summary: dict[str, Any]) -> dict[str, Any]:
-        """
-        对 diff 结果进行语义增强。
-
-        Args:
-            diff_summary: 差异汇总结果，需包含 old_text、new_text、diff_stats、diff_texts
-
-        Returns:
-            语义增强后的结果
-        """
+    async def enhance_diff_result(
+        self, diff_summary: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, int]]:
+        """对 diff 结果进行语义增强。返回 (业务结果, token用量)。"""
         workflow_input = build_comparison_workflow_input(
             old_text=diff_summary.get("old_text", ""),
             new_text=diff_summary.get("new_text", ""),
@@ -471,8 +477,13 @@ class CozeService:
             rule_version_id=diff_summary.get("rule_version_id"),
             contract_type=diff_summary.get("contract_type", "通用"),
         )
-        result = await self.call_workflow(self.comparison_workflow_id, workflow_input)
-        return normalize_comparison_workflow_result(result)
+        raw_result = await self.call_workflow(
+            self.comparison_workflow_id, workflow_input
+        )
+        return (
+            normalize_comparison_workflow_result(raw_result["business_data"]),
+            raw_result["usage"],
+        )
 
 
 def get_coze_service() -> CozeService:
