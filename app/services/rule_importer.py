@@ -43,10 +43,9 @@ def parse_rules_csv(content: bytes) -> tuple[list[dict], list[dict]]:
             errors.extend(row_errors)
             continue
 
-        rules.append({
-            target: normalized[source]
-            for source, target in CSV_FIELD_MAP.items()
-        })
+        rules.append(
+            {target: normalized[source] for source, target in CSV_FIELD_MAP.items()}
+        )
 
     return rules, errors
 
@@ -69,19 +68,31 @@ def _validate_headers(fieldnames: list[str]) -> list[dict]:
     ]
 
 
-def _validate_row(row_index: int, row: dict[str, str], seen_codes: set[str]) -> list[dict]:
+def _validate_row(
+    row_index: int, row: dict[str, str], seen_codes: set[str]
+) -> list[dict]:
     """校验单行规则数据。"""
     errors: list[dict] = []
     for field in REQUIRED_FIELDS:
         if not row.get(field):
-            errors.append({"row": row_index, "field": field, "message": "必填字段不能为空"})
+            errors.append(
+                {"row": row_index, "field": field, "message": "必填字段不能为空"}
+            )
 
     rule_code = row.get("规则编号")
     if rule_code and rule_code in seen_codes:
-        errors.append({"row": row_index, "field": "规则编号", "message": "CSV 内规则编号重复"})
+        errors.append(
+            {"row": row_index, "field": "规则编号", "message": "CSV 内规则编号重复"}
+        )
 
     risk_level = row.get("默认风险等级")
     if risk_level and risk_level not in VALID_RISK_LEVELS:
-        errors.append({"row": row_index, "field": "默认风险等级", "message": "默认风险等级必须是 高/中/低"})
+        errors.append(
+            {
+                "row": row_index,
+                "field": "默认风险等级",
+                "message": "默认风险等级必须是 高/中/低",
+            }
+        )
 
     return errors

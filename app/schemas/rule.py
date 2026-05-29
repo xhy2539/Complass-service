@@ -2,11 +2,13 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from pydantic import Field
 
 
 class RuleCreateRequest(BaseModel):
     """创建规则请求。"""
+
     rule_code: str = Field(..., min_length=1, max_length=50)
     contract_type: str = Field(..., min_length=1, max_length=50)
     review_module: str = Field(..., min_length=1, max_length=50)
@@ -21,6 +23,7 @@ class RuleCreateRequest(BaseModel):
 
 class RuleUpdateRequest(BaseModel):
     """更新规则请求。"""
+
     contract_type: Optional[str] = None
     review_module: Optional[str] = None
     risk_name: Optional[str] = None
@@ -34,17 +37,20 @@ class RuleUpdateRequest(BaseModel):
 
 class RuleEnabledRequest(BaseModel):
     """启用或停用规则请求。"""
+
     enabled: bool
 
 
 class RuleVersionCreateRequest(BaseModel):
     """创建规则版本请求。"""
+
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
 
 
 class RuleResponse(BaseModel):
     """规则响应。"""
+
     id: str
     version_id: str
     rule_code: str
@@ -63,6 +69,7 @@ class RuleResponse(BaseModel):
 
 class RuleListResponse(BaseModel):
     """规则列表响应。"""
+
     rules: list[RuleResponse]
     total: int
     skip: int
@@ -71,6 +78,7 @@ class RuleListResponse(BaseModel):
 
 class RuleVersionResponse(BaseModel):
     """规则版本响应。"""
+
     id: str
     version_no: int
     name: str
@@ -84,6 +92,7 @@ class RuleVersionResponse(BaseModel):
 
 class CsvImportErrorItem(BaseModel):
     """CSV 导入错误项。"""
+
     row: int
     field: str
     message: str
@@ -91,6 +100,7 @@ class CsvImportErrorItem(BaseModel):
 
 class CsvImportResponse(BaseModel):
     """CSV 导入响应。"""
+
     success: bool
     version_id: Optional[str] = None
     version_no: Optional[int] = None

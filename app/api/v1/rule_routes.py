@@ -2,33 +2,33 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter
+from fastapi import Depends
+from fastapi import File
+from fastapi import HTTPException
+from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_user
 from app.models.database import User
 from app.models.database_connection import get_db
-from app.schemas.rule import (
-    CsvImportResponse,
-    RuleCreateRequest,
-    RuleEnabledRequest,
-    RuleListResponse,
-    RuleResponse,
-    RuleUpdateRequest,
-    RuleVersionCreateRequest,
-    RuleVersionResponse,
-)
+from app.schemas.rule import CsvImportResponse
+from app.schemas.rule import RuleCreateRequest
+from app.schemas.rule import RuleEnabledRequest
+from app.schemas.rule import RuleListResponse
+from app.schemas.rule import RuleResponse
+from app.schemas.rule import RuleUpdateRequest
+from app.schemas.rule import RuleVersionCreateRequest
+from app.schemas.rule import RuleVersionResponse
 from app.services.rule_importer import parse_rules_csv
-from app.services.rule_service import (
-    activate_rule_version,
-    create_rule,
-    create_rule_version,
-    delete_rule,
-    get_active_rule_version,
-    list_rule_versions,
-    list_rules,
-    update_rule,
-)
+from app.services.rule_service import activate_rule_version
+from app.services.rule_service import create_rule
+from app.services.rule_service import create_rule_version
+from app.services.rule_service import delete_rule
+from app.services.rule_service import get_active_rule_version
+from app.services.rule_service import list_rule_versions
+from app.services.rule_service import list_rules
+from app.services.rule_service import update_rule
 
 rule_router = APIRouter(tags=["规则库管理"])
 
@@ -141,7 +141,12 @@ async def import_rules_csv(
         return CsvImportResponse(success=False, imported_count=0, errors=errors)
 
     try:
-        version = create_rule_version(db, name=file.filename or "CSV 导入规则版本", description="CSV 导入", user_id=current_user.id)
+        version = create_rule_version(
+            db,
+            name=file.filename or "CSV 导入规则版本",
+            description="CSV 导入",
+            user_id=current_user.id,
+        )
         for rule_data in rules:
             create_rule(db, version.id, rule_data | {"enabled": True})
         db.commit()
@@ -164,7 +169,10 @@ async def get_rule_versions(
     db: Session = Depends(get_db),
 ) -> list[RuleVersionResponse]:
     """查询规则版本列表。"""
-    return [RuleVersionResponse.model_validate(version.to_dict()) for version in list_rule_versions(db)]
+    return [
+        RuleVersionResponse.model_validate(version.to_dict())
+        for version in list_rule_versions(db)
+    ]
 
 
 @rule_router.post("/rule-versions", response_model=RuleVersionResponse)
@@ -174,12 +182,16 @@ async def add_rule_version(
     db: Session = Depends(get_db),
 ) -> RuleVersionResponse:
     """创建规则版本。"""
-    version = create_rule_version(db, request.name, request.description, current_user.id)
+    version = create_rule_version(
+        db, request.name, request.description, current_user.id
+    )
     db.commit()
     return RuleVersionResponse.model_validate(version.to_dict())
 
 
-@rule_router.post("/rule-versions/{version_id}/activate", response_model=RuleVersionResponse)
+@rule_router.post(
+    "/rule-versions/{version_id}/activate", response_model=RuleVersionResponse
+)
 async def activate_version(
     version_id: str,
     current_user: User = Depends(get_current_user),

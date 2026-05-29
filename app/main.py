@@ -13,8 +13,7 @@ from app.models.database_connection import init_db
 
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 # 全局安全依赖，API 文档中会显示认证组件
@@ -35,13 +34,15 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         description="合规罗盘 V0 后端服务",
-        lifespan=lifespan
+        lifespan=lifespan,
     )
 
     # 配置 CORS，允许列表通过环境变量/配置管理
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[origin.strip() for origin in settings.cors_allow_origins.split(",")],
+        allow_origins=[
+            origin.strip() for origin in settings.cors_allow_origins.split(",")
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

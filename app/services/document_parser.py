@@ -2,11 +2,10 @@
 
 import io
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-import PyPDF2
 import pdfplumber
 from docx import Document
 from docx.oxml.ns import qn
@@ -14,12 +13,14 @@ from docx.oxml.ns import qn
 
 class DocumentParseError(Exception):
     """文档解析失败异常。"""
+
     pass
 
 
 @dataclass
 class Paragraph:
     """段落结构，包含位置信息和文本内容。"""
+
     index: int  # 段落索引
     text: str  # 段落文本
     char_offset_start: int  # 在文档中的字符起始位置
@@ -36,6 +37,7 @@ class Paragraph:
 @dataclass
 class ParsedDocument:
     """解析后的文档结构。"""
+
     text: str  # 纯文本内容
     paragraphs: list[Paragraph]  # 段落列表
     sentences: list[dict]  # 句子列表（用于比对）
@@ -53,25 +55,28 @@ class DocumentParser:
 
     # 脱敏规则
     SANITIZE_PATTERNS = [
-        (r'\d{11}', '[手机号]'),  # 手机号
-        (r'\d{3,4}[-\s]?\d{7,8}', '[电话号码]'),  # 固定电话
-        (r'[\w.-]+@[\w.-]+\.\w+', '[邮箱]'),  # 邮箱
-        (r'622\d{13}', '[银行卡]'),  # 银行卡号（简单判断）
+        (r"\d{11}", "[手机号]"),  # 手机号
+        (r"\d{3,4}[-\s]?\d{7,8}", "[电话号码]"),  # 固定电话
+        (r"[\w.-]+@[\w.-]+\.\w+", "[邮箱]"),  # 邮箱
+        (r"622\d{13}", "[银行卡]"),  # 银行卡号（简单判断）
     ]
 
     # 标题识别正则表达式（按优先级排序，作为 style 检测的兜底）
     HEADING_PATTERNS = [
-        (r'^第[一二三四五六七八九十百千零\d]+[条章节款项]', 'heading2'),  # "第X条"、"第X章"
-        (r'^[一二三四五六七八九十百千零\d]+[、.。]', 'heading3'),  # "一、"、"1."
-        (r'^[《『「]?[一-龥]{2,20}[》』」]?$', 'heading1'),  # 纯中文标题，2-20个汉字
-        (r'^[一-龥]{1,10}$', 'heading3'),  # 短中文文本，可能是小标题
+        (
+            r"^第[一二三四五六七八九十百千零\d]+[条章节款项]",
+            "heading2",
+        ),  # "第X条"、"第X章"
+        (r"^[一二三四五六七八九十百千零\d]+[、.。]", "heading3"),  # "一、"、"1."
+        (r"^[《『「]?[一-龥]{2,20}[》』」]?$", "heading1"),  # 纯中文标题，2-20个汉字
+        (r"^[一-龥]{1,10}$", "heading3"),  # 短中文文本，可能是小标题
     ]
 
     # docx 原生标题样式名（优先于正则匹配）
     HEADING_STYLE_PATTERNS = [
-        (r'heading\s*1|标题\s*1', 'heading1', 1),
-        (r'heading\s*2|标题\s*2', 'heading2', 2),
-        (r'heading\s*3|标题\s*3', 'heading3', 3),
+        (r"heading\s*1|标题\s*1", "heading1", 1),
+        (r"heading\s*2|标题\s*2", "heading2", 2),
+        (r"heading\s*3|标题\s*3", "heading3", 3),
     ]
 
     @classmethod
@@ -160,16 +165,18 @@ class DocumentParser:
         )
         paragraphs.append(paragraph)
 
-        for sent_match in re.finditer(r'[^。！？;]+[。！？;]*', text):
+        for sent_match in re.finditer(r"[^。！？;]+[。！？;]*", text):
             sent_text = sent_match.group()
             if sent_text:
-                sentences.append({
-                    "text": sent_text,
-                    "char_offset_start": para_start + sent_match.start(),
-                    "char_offset_end": para_start + sent_match.end(),
-                    "paragraph_index": len(paragraphs) - 1,
-                    "file_name": filename,
-                })
+                sentences.append(
+                    {
+                        "text": sent_text,
+                        "char_offset_start": para_start + sent_match.start(),
+                        "char_offset_end": para_start + sent_match.end(),
+                        "paragraph_index": len(paragraphs) - 1,
+                        "file_name": filename,
+                    }
+                )
 
         return len(text) + 1  # +1 for \n separator
 
@@ -187,7 +194,7 @@ class DocumentParser:
             tables_iter = iter(doc.tables)
 
             for child in body:
-                if child.tag == qn('w:p'):
+                if child.tag == qn("w:p"):
                     try:
                         para = next(paras_iter)
                     except StopIteration:
@@ -201,14 +208,21 @@ class DocumentParser:
                     if heading:
                         paragraph_type, paragraph_level = heading
                     else:
-                        paragraph_type, paragraph_level = cls._detect_paragraph_type(text)
+                        paragraph_type, paragraph_level = cls._detect_paragraph_type(
+                            text
+                        )
 
                     char_offset += cls._add_paragraph_entry(
-                        paragraphs, sentences, text, char_offset,
-                        paragraph_type, paragraph_level, filename,
+                        paragraphs,
+                        sentences,
+                        text,
+                        char_offset,
+                        paragraph_type,
+                        paragraph_level,
+                        filename,
                     )
 
-                elif child.tag == qn('w:tbl'):
+                elif child.tag == qn("w:tbl"):
                     try:
                         table = next(tables_iter)
                     except StopIteration:
@@ -225,8 +239,13 @@ class DocumentParser:
                     if table_rows:
                         table_text = "【表格】\n" + "\n".join(table_rows)
                         char_offset += cls._add_paragraph_entry(
-                            paragraphs, sentences, table_text, char_offset,
-                            "body", 0, filename,
+                            paragraphs,
+                            sentences,
+                            table_text,
+                            char_offset,
+                            "body",
+                            0,
+                            filename,
                         )
 
             text = "\n".join(p.text for p in paragraphs)
@@ -266,10 +285,17 @@ class DocumentParser:
                         if not line:
                             continue
 
-                        paragraph_type, paragraph_level = cls._detect_paragraph_type(line)
+                        paragraph_type, paragraph_level = cls._detect_paragraph_type(
+                            line
+                        )
                         char_offset += cls._add_paragraph_entry(
-                            paragraphs, sentences, line, char_offset,
-                            paragraph_type, paragraph_level, filename,
+                            paragraphs,
+                            sentences,
+                            line,
+                            char_offset,
+                            paragraph_type,
+                            paragraph_level,
+                            filename,
                             page_number=page_num,
                         )
 
@@ -309,8 +335,13 @@ class DocumentParser:
 
                 paragraph_type, paragraph_level = cls._detect_paragraph_type(line)
                 char_offset += cls._add_paragraph_entry(
-                    paragraphs, sentences, line, char_offset,
-                    paragraph_type, paragraph_level, filename,
+                    paragraphs,
+                    sentences,
+                    line,
+                    char_offset,
+                    paragraph_type,
+                    paragraph_level,
+                    filename,
                 )
 
             joined_text = "\n".join(p.text for p in paragraphs)
@@ -332,8 +363,17 @@ class DocumentParser:
     def _is_key_clause(cls, text: str) -> bool:
         """判断是否为关键条款。"""
         key_keywords = [
-            "违约", "赔偿", "责任", "罚款", "解除", "终止",
-            "付款", "金额", "交付", "保密", "知识产权"
+            "违约",
+            "赔偿",
+            "责任",
+            "罚款",
+            "解除",
+            "终止",
+            "付款",
+            "金额",
+            "交付",
+            "保密",
+            "知识产权",
         ]
         return any(kw in text for kw in key_keywords)
 

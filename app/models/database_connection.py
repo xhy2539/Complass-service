@@ -3,8 +3,11 @@
 from contextlib import contextmanager
 from typing import Generator
 
-from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import create_engine
+from sqlalchemy import inspect
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker
 
 from app.core.complass_service_settings import get_complass_service_settings
 from app.models.database import Base
@@ -17,7 +20,7 @@ engine = create_engine(
     pool_pre_ping=True,  # 连接前测试
     pool_size=10,
     max_overflow=20,
-    echo=False  # 调试时可改为 True
+    echo=False,  # 调试时可改为 True
 )
 
 # 创建会话工厂
@@ -35,18 +38,30 @@ def _ensure_schema_updates() -> None:
     _add_column_if_missing("risk_points", "replace_text", "TEXT")
     _add_column_if_missing("review_tasks", "rule_version_id", "VARCHAR(36)")
     _add_column_if_missing("review_tasks", "rules_snapshot_json", "JSON")
-    _add_column_if_missing("review_tasks", "contract_type", "VARCHAR(50) NOT NULL DEFAULT '通用'")
+    _add_column_if_missing(
+        "review_tasks", "contract_type", "VARCHAR(50) NOT NULL DEFAULT '通用'"
+    )
     _add_column_if_missing("review_tasks", "sanitization_mapping_json", "JSON")
-    _add_column_if_missing("review_tasks", "sanitization_status", "VARCHAR(20) NOT NULL DEFAULT 'not_required'")
+    _add_column_if_missing(
+        "review_tasks",
+        "sanitization_status",
+        "VARCHAR(20) NOT NULL DEFAULT 'not_required'",
+    )
     _add_column_if_missing("review_tasks", "sanitization_error", "TEXT")
     _add_column_if_missing("risk_points", "rule_code", "VARCHAR(50)")
     _add_column_if_missing("risk_points", "rule_snapshot_json", "JSON")
     _add_column_if_missing("comparison_tasks", "rule_version_id", "VARCHAR(36)")
     _add_column_if_missing("comparison_tasks", "rules_snapshot_json", "JSON")
-    _add_column_if_missing("comparison_tasks", "contract_type", "VARCHAR(50) NOT NULL DEFAULT '通用'")
+    _add_column_if_missing(
+        "comparison_tasks", "contract_type", "VARCHAR(50) NOT NULL DEFAULT '通用'"
+    )
     _add_column_if_missing("comparison_tasks", "old_sanitization_mapping_json", "JSON")
     _add_column_if_missing("comparison_tasks", "new_sanitization_mapping_json", "JSON")
-    _add_column_if_missing("comparison_tasks", "sanitization_status", "VARCHAR(20) NOT NULL DEFAULT 'not_required'")
+    _add_column_if_missing(
+        "comparison_tasks",
+        "sanitization_status",
+        "VARCHAR(20) NOT NULL DEFAULT 'not_required'",
+    )
     _add_column_if_missing("comparison_tasks", "sanitization_error", "TEXT")
     _add_column_if_missing("comparison_risk_points", "rule_code", "VARCHAR(50)")
     _add_column_if_missing("comparison_risk_points", "rule_snapshot_json", "JSON")
@@ -61,7 +76,9 @@ def _add_column_if_missing(table_name: str, column_name: str, ddl: str) -> None:
     columns = {column["name"] for column in inspector.get_columns(table_name)}
     if column_name not in columns:
         with engine.begin() as connection:
-            connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl}"))
+            connection.execute(
+                text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl}")
+            )
 
 
 def get_db() -> Generator[Session, None, None]:

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 class ComparisonTaskSchema(BaseModel):
     """比对任务 schema。"""
+
     id: str
     old_file_name: str
     new_file_name: str
@@ -32,6 +33,7 @@ class ComparisonTaskSchema(BaseModel):
 
 class ComparisonTaskCreateResponse(BaseModel):
     """创建比对任务响应。"""
+
     task_id: str
     message: str = "版本比对任务创建成功"
     old_file: dict
@@ -41,6 +43,7 @@ class ComparisonTaskCreateResponse(BaseModel):
 
 class ComparisonTaskQueryResponse(BaseModel):
     """查询比对任务响应。"""
+
     task: ComparisonTaskSchema
     diff_details: list
     risk_points: list
@@ -50,6 +53,7 @@ class ComparisonTaskQueryResponse(BaseModel):
 
 class ComparisonRiskPointSchema(BaseModel):
     """比对风险点 schema。"""
+
     id: str
     change_type: str
     old_text: Optional[str] = None

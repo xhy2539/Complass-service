@@ -4,28 +4,44 @@ import logging
 import re
 import uuid
 from datetime import datetime
-from typing import Annotated, Optional
+from typing import Annotated
+from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy.orm import Session, joinedload
-
-logger = logging.getLogger(__name__)
+from fastapi import APIRouter
+from fastapi import Depends
+from fastapi import File
+from fastapi import HTTPException
+from fastapi import UploadFile
+from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
 
 from app.api.v1.auth import get_current_user
-from app.models.database import (
-    ReviewTask, RiskPoint, TaskStatus, RiskLevel, RiskStatus, User,
-    Paragraph, Sentence
-)
+from app.models.database import Paragraph
+from app.models.database import ReviewTask
+from app.models.database import RiskLevel
+from app.models.database import RiskPoint
+from app.models.database import RiskStatus
+from app.models.database import Sentence
+from app.models.database import TaskStatus
+from app.models.database import User
 from app.models.database_connection import get_db
-from app.schemas.review import (
-    ReviewTaskSchema, ReviewTaskCreateResponse, ReviewTaskQueryResponse,
-    ReviewTaskListResponse, ReviewRiskListResponse, RiskPointSchema,
-    RiskStatsSchema, ReviewExportRequest
-)
-from app.services.document_parser import DocumentParseError, DocumentParser
+from app.schemas.review import ReviewExportRequest
+from app.schemas.review import ReviewRiskListResponse
+from app.schemas.review import ReviewTaskCreateResponse
+from app.schemas.review import ReviewTaskListResponse
+from app.schemas.review import ReviewTaskQueryResponse
+from app.schemas.review import ReviewTaskSchema
+from app.schemas.review import RiskPointSchema
+from app.schemas.review import RiskStatsSchema
 from app.services.document_exporter import DocumentExporter
-from app.services.rule_service import build_enabled_rules_snapshot, find_rule_snapshot
-from app.services.sanitization_service import restore_text_from_mapping, sanitize_contract_text
+from app.services.document_parser import DocumentParseError
+from app.services.document_parser import DocumentParser
+from app.services.rule_service import build_enabled_rules_snapshot
+from app.services.rule_service import find_rule_snapshot
+from app.services.sanitization_service import restore_text_from_mapping
+from app.services.sanitization_service import sanitize_contract_text
+
+logger = logging.getLogger(__name__)
 
 contract_review_router = APIRouter(tags=["合同审查"])
 
@@ -45,7 +61,7 @@ def validate_file(file: UploadFile) -> None:
     if not DocumentParser.is_supported(file.filename):
         raise HTTPException(
             status_code=400,
-            detail=f"不支持的文件格式，仅支持: {', '.join(DocumentParser.SUPPORTED_EXTENSIONS)}"
+            detail=f"不支持的文件格式，仅支持: {', '.join(DocumentParser.SUPPORTED_EXTENSIONS)}",
         )
 
 
@@ -64,8 +80,8 @@ def compute_text_similarity(text1: str, text2: str) -> float:
         return 0.0
 
     # 清理文本：去除标点、特殊字符，只保留中文、字母、数字
-    clean_text1 = re.sub(r'[^\w\u4e00-\u9fff]', '', text1.lower())
-    clean_text2 = re.sub(r'[^\w\u4e00-\u9fff]', '', text2.lower())
+    clean_text1 = re.sub(r"[^\w\u4e00-\u9fff]", "", text1.lower())
+    clean_text2 = re.sub(r"[^\w\u4e00-\u9fff]", "", text2.lower())
 
     if not clean_text1 or not clean_text2:
         return 0.0
@@ -90,13 +106,56 @@ def extract_keywords(text: str, max_count: int = 5) -> list[str]:
         关键词列表
     """
     # 去除常见停用词
-    stop_words = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个',
-                  '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看',
-                  '好', '自己', '这', '那', '它', '他', '她', '们', '这个', '那个', '什么',
-                  '怎么', '为什么', '如果', '因为', '所以', '但是', '而且', '或者', '以及'}
+    stop_words = {
+        "的",
+        "了",
+        "在",
+        "是",
+        "我",
+        "有",
+        "和",
+        "就",
+        "不",
+        "人",
+        "都",
+        "一",
+        "一个",
+        "上",
+        "也",
+        "很",
+        "到",
+        "说",
+        "要",
+        "去",
+        "你",
+        "会",
+        "着",
+        "没有",
+        "看",
+        "好",
+        "自己",
+        "这",
+        "那",
+        "它",
+        "他",
+        "她",
+        "们",
+        "这个",
+        "那个",
+        "什么",
+        "怎么",
+        "为什么",
+        "如果",
+        "因为",
+        "所以",
+        "但是",
+        "而且",
+        "或者",
+        "以及",
+    }
 
     # 按标点和空格分割
-    words = re.split(r'[，。！？；：、""''（）]', text)
+    words = re.split(r'[，。！？；：、""' "（）]", text)
     words = [w.strip() for w in words if w.strip()]
 
     # 过滤停用词和过短的词
@@ -107,8 +166,7 @@ def extract_keywords(text: str, max_count: int = 5) -> list[str]:
 
 
 def find_best_sentence_match(
-    evidence: str,
-    sentences_info: dict[int, dict]
+    evidence: str, sentences_info: dict[int, dict]
 ) -> Optional[dict]:
     """
     查找与风险点证据最匹配的句子。
@@ -125,7 +183,6 @@ def find_best_sentence_match(
 
     best_match = None
     best_score = 0.0
-    best_idx = None
 
     # 策略1：精确包含匹配
     for idx, sent_info in sentences_info.items():
@@ -136,7 +193,6 @@ def find_best_sentence_match(
             if score > best_score:
                 best_score = score
                 best_match = sent_info
-                best_idx = idx
 
     if best_score >= 1.0:
         return best_match
@@ -149,7 +205,6 @@ def find_best_sentence_match(
         if match_count > best_score:
             best_score = match_count
             best_match = sent_info
-            best_idx = idx
 
     if best_score >= 1.0:
         return best_match
@@ -171,9 +226,7 @@ def find_best_sentence_match(
 
 
 def find_best_paragraph_match(
-    title: str,
-    reason: str,
-    paragraphs_info: dict[int, dict]
+    title: str, reason: str, paragraphs_info: dict[int, dict]
 ) -> tuple[Optional[dict], Optional[str]]:
     """
     查找与风险点最匹配的段落。
@@ -208,7 +261,7 @@ def find_best_paragraph_match(
             best_match = para_info
             matched_idx = idx
             # 如果关键词精确命中，分数更高
-            if any(kw == para_text[:len(kw)] for kw in keywords if len(kw) >= 4):
+            if any(kw == para_text[: len(kw)] for kw in keywords if len(kw) >= 4):
                 best_score += 0.5
 
     # 如果关键词匹配分数足够高，直接返回
@@ -217,7 +270,7 @@ def find_best_paragraph_match(
             "paragraph_index": matched_idx,
             "char_offset_start": best_match["char_offset_start"],
             "char_offset_end": best_match["char_offset_end"],
-            "match_strategy": "keyword"
+            "match_strategy": "keyword",
         }, best_match["text"]
 
     # 策略2：文本相似度匹配
@@ -233,7 +286,11 @@ def find_best_paragraph_match(
     for idx, para_info in paragraphs_info.items():
         # 计算与段落的相似度
         sim_title = compute_text_similarity(target_text, para_info["text"])
-        sim_reason = compute_text_similarity(reason[:50], para_info["text"]) if len(reason) > 50 else compute_text_similarity(reason, para_info["text"])
+        sim_reason = (
+            compute_text_similarity(reason[:50], para_info["text"])
+            if len(reason) > 50
+            else compute_text_similarity(reason, para_info["text"])
+        )
 
         # 取两个相似度的最大值
         max_sim = max(sim_title, sim_reason)
@@ -250,7 +307,7 @@ def find_best_paragraph_match(
             "char_offset_start": similarity_match["char_offset_start"],
             "char_offset_end": similarity_match["char_offset_end"],
             "match_strategy": "similarity",
-            "similarity_score": round(best_similarity, 2)
+            "similarity_score": round(best_similarity, 2),
         }, similarity_match["text"]
 
     # 策略3：回退策略
@@ -265,7 +322,7 @@ def find_best_paragraph_match(
             "paragraph_index": fallback_idx,
             "char_offset_start": fallback_para["char_offset_start"],
             "char_offset_end": fallback_para["char_offset_end"],
-            "match_strategy": "fallback"
+            "match_strategy": "fallback",
         }, fallback_para["text"]
 
     return None, None
@@ -277,7 +334,7 @@ async def create_review_task(
     use_coze: bool = True,
     contract_type: str = "通用",
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> ReviewTaskCreateResponse:
     """
     创建单合同审查任务。
@@ -301,7 +358,9 @@ async def create_review_task(
     except DocumentParseError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    logger.info(f"[Review] 文件解析完成: {file.filename}, 段落数={len(parse_result.paragraphs)}, 句子数={len(parse_result.sentences)}")
+    logger.info(
+        f"[Review] 文件解析完成: {file.filename}, 段落数={len(parse_result.paragraphs)}, 句子数={len(parse_result.sentences)}"
+    )
 
     sanitization = sanitize_contract_text(parse_result.text)
     if sanitization.errors:
@@ -311,11 +370,15 @@ async def create_review_task(
     rules_snapshot: list[dict] = []
     if use_coze:
         try:
-            rule_version, rules_snapshot = build_enabled_rules_snapshot(db, contract_type)
+            rule_version, rules_snapshot = build_enabled_rules_snapshot(
+                db, contract_type
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         if not rules_snapshot:
-            raise HTTPException(status_code=400, detail="当前合同类型没有可用的启用规则")
+            raise HTTPException(
+                status_code=400, detail="当前合同类型没有可用的启用规则"
+            )
 
     # 创建审查任务
     task_id = _uuid()
@@ -346,17 +409,17 @@ async def create_review_task(
                     "char_offset_start": p.char_offset_start,
                     "char_offset_end": p.char_offset_end,
                     "page_number": p.page_number,
-                    "is_key_clause": p.is_key_clause
+                    "is_key_clause": p.is_key_clause,
                 }
                 for p in parse_result.paragraphs
             ],
-            "sentences": parse_result.sentences
+            "sentences": parse_result.sentences,
         },
         comparison_data_json={
             "sentences": parse_result.sentences,
-            "key_clauses": [p.text for p in parse_result.paragraphs if p.is_key_clause]
+            "key_clauses": [p.text for p in parse_result.paragraphs if p.is_key_clause],
         },
-        status=TaskStatus.PROCESSING
+        status=TaskStatus.PROCESSING,
     )
 
     db.add(task)
@@ -373,7 +436,7 @@ async def create_review_task(
             page_number=p.page_number,
             is_key_clause=p.is_key_clause,
             paragraph_type=p.paragraph_type,
-            paragraph_level=p.paragraph_level
+            paragraph_level=p.paragraph_level,
         )
         db.add(paragraph)
 
@@ -388,7 +451,7 @@ async def create_review_task(
             text=s.get("text", ""),
             char_offset_start=s.get("char_offset_start"),
             char_offset_end=s.get("char_offset_end"),
-            paragraph_index=s.get("paragraph_index")
+            paragraph_index=s.get("paragraph_index"),
         )
         db.add(sentence)
         sentences_info[idx] = {"text": s.get("text", ""), "id": sentence_id}
@@ -402,7 +465,7 @@ async def create_review_task(
             "text": p.text,
             "char_offset_start": p.char_offset_start,
             "char_offset_end": p.char_offset_end,
-            "page_number": p.page_number
+            "page_number": p.page_number,
         }
         for p in parse_result.paragraphs
     }
@@ -411,6 +474,7 @@ async def create_review_task(
     if use_coze:
         try:
             from app.services.coze_service import get_coze_service
+
             coze_service = get_coze_service()
             coze_result = await coze_service.review_contract_file(
                 content=content,
@@ -424,7 +488,9 @@ async def create_review_task(
 
             # 更新任务结果
             task.overall_conclusion = coze_result.get("overall_conclusion", "")
-            task.risk_summary = coze_result.get("risk_summary", {"high": 0, "medium": 0, "low": 0})
+            task.risk_summary = coze_result.get(
+                "risk_summary", {"high": 0, "medium": 0, "low": 0}
+            )
             task.suggest_deep_review = coze_result.get("suggest_deep_review", False)
             task.coze_message = coze_result.get("message", "")
             task.status = TaskStatus.COMPLETED
@@ -436,21 +502,26 @@ async def create_review_task(
 
             for rp_data in risk_points_data:
                 rule_code = rp_data.get("rule_code") or rp_data.get("rule_id")
-                evidence = restore_text_from_mapping(rp_data.get("evidence") or "", sanitization.mappings)
-                reason = restore_text_from_mapping(rp_data.get("reason") or "", sanitization.mappings)
-                suggestion = restore_text_from_mapping(rp_data.get("suggestion") or "", sanitization.mappings)
+                evidence = restore_text_from_mapping(
+                    rp_data.get("evidence") or "", sanitization.mappings
+                )
+                reason = restore_text_from_mapping(
+                    rp_data.get("reason") or "", sanitization.mappings
+                )
+                suggestion = restore_text_from_mapping(
+                    rp_data.get("suggestion") or "", sanitization.mappings
+                )
 
                 # 使用改进的匹配算法定位风险点
                 position, original_text = find_best_paragraph_match(
                     title=rp_data.get("title", ""),
                     reason=reason,
-                    paragraphs_info=paragraphs_info
+                    paragraphs_info=paragraphs_info,
                 )
 
                 # 查找最匹配的句子
                 matched_sentence = find_best_sentence_match(
-                    evidence=evidence,
-                    sentences_info=sentences_info
+                    evidence=evidence, sentences_info=sentences_info
                 )
 
                 risk_point = RiskPoint(
@@ -460,15 +531,19 @@ async def create_review_task(
                     level=RiskLevel(rp_data.get("level", "medium")),
                     reason=reason,
                     evidence=evidence,
-                    impact=restore_text_from_mapping(rp_data.get("impact") or "", sanitization.mappings),
+                    impact=restore_text_from_mapping(
+                        rp_data.get("impact") or "", sanitization.mappings
+                    ),
                     suggestion=suggestion,
-                    replace_text=restore_text_from_mapping(rp_data.get("replace_text") or "", sanitization.mappings),
+                    replace_text=restore_text_from_mapping(
+                        rp_data.get("replace_text") or "", sanitization.mappings
+                    ),
                     rule_code=rule_code,
                     rule_snapshot_json=find_rule_snapshot(rules_snapshot, rule_code),
                     position=position,
                     sentence_id=matched_sentence["id"] if matched_sentence else None,
                     status=RiskStatus.PENDING,
-                    source="coze"
+                    source="coze",
                 )
                 db.add(risk_point)
 
@@ -480,34 +555,43 @@ async def create_review_task(
 
     db.commit()
 
-    return ReviewTaskCreateResponse(
-        task_id=task_id,
-        message="审查任务创建成功"
-    )
+    return ReviewTaskCreateResponse(task_id=task_id, message="审查任务创建成功")
 
 
-@contract_review_router.get("/reviews/{task_id}", response_model=ReviewTaskQueryResponse)
+@contract_review_router.get(
+    "/reviews/{task_id}", response_model=ReviewTaskQueryResponse
+)
 async def get_review_task(
     task_id: str,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> ReviewTaskQueryResponse:
     """查询审查任务详情，包括风险点列表。"""
-    task = db.query(ReviewTask).filter(
-        ReviewTask.id == task_id,
-        ReviewTask.user_id == current_user.id
-    ).first()
+    task = (
+        db.query(ReviewTask)
+        .filter(ReviewTask.id == task_id, ReviewTask.user_id == current_user.id)
+        .first()
+    )
 
     if not task:
-        raise HTTPException(status_code=404, detail=f"审查任务 {task_id} 不存在或无权访问")
+        raise HTTPException(
+            status_code=404, detail=f"审查任务 {task_id} 不存在或无权访问"
+        )
 
     # 获取风险点（预加载 sentence 关系）
-    risk_points = db.query(RiskPoint).options(joinedload(RiskPoint.sentence)).filter(RiskPoint.review_task_id == task_id).all()
+    risk_points = (
+        db.query(RiskPoint)
+        .options(joinedload(RiskPoint.sentence))
+        .filter(RiskPoint.review_task_id == task_id)
+        .all()
+    )
 
     return ReviewTaskQueryResponse(
         task=ReviewTaskSchema.model_validate(task.to_dict()),
-        risk_points=[RiskPointSchema.model_validate(rp.to_dict()) for rp in risk_points],
-        message="查询成功"
+        risk_points=[
+            RiskPointSchema.model_validate(rp.to_dict()) for rp in risk_points
+        ],
+        message="查询成功",
     )
 
 
@@ -517,7 +601,7 @@ async def list_review_tasks(
     limit: int = 20,
     status: Optional[str] = None,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> ReviewTaskListResponse:
     """查询当前用户的审查任务列表（支持分页和状态筛选）。"""
     query = db.query(ReviewTask).filter(ReviewTask.user_id == current_user.id)
@@ -536,28 +620,36 @@ async def list_review_tasks(
         tasks=[ReviewTaskSchema.model_validate(t.to_dict()) for t in tasks],
         total=total,
         skip=skip,
-        limit=limit
+        limit=limit,
     )
 
 
-@contract_review_router.get("/reviews/{task_id}/risks", response_model=ReviewRiskListResponse)
+@contract_review_router.get(
+    "/reviews/{task_id}/risks", response_model=ReviewRiskListResponse
+)
 async def get_review_task_risks(
     task_id: str,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> ReviewRiskListResponse:
     """查询指定审查任务的风险点列表。"""
-    task = db.query(ReviewTask).filter(
-        ReviewTask.id == task_id,
-        ReviewTask.user_id == current_user.id
-    ).first()
+    task = (
+        db.query(ReviewTask)
+        .filter(ReviewTask.id == task_id, ReviewTask.user_id == current_user.id)
+        .first()
+    )
 
     if not task:
-        raise HTTPException(status_code=404, detail=f"审查任务 {task_id} 不存在或无权访问")
+        raise HTTPException(
+            status_code=404, detail=f"审查任务 {task_id} 不存在或无权访问"
+        )
 
-    risk_points = db.query(RiskPoint).options(joinedload(RiskPoint.sentence)).filter(
-        RiskPoint.review_task_id == task_id
-    ).all()
+    risk_points = (
+        db.query(RiskPoint)
+        .options(joinedload(RiskPoint.sentence))
+        .filter(RiskPoint.review_task_id == task_id)
+        .all()
+    )
 
     total = len(risk_points)
     pending = sum(1 for rp in risk_points if rp.status == RiskStatus.PENDING)
@@ -566,14 +658,13 @@ async def get_review_task_risks(
 
     return ReviewRiskListResponse(
         task_id=task_id,
-        risk_points=[RiskPointSchema.model_validate(rp.to_dict()) for rp in risk_points],
+        risk_points=[
+            RiskPointSchema.model_validate(rp.to_dict()) for rp in risk_points
+        ],
         total=total,
         risk_stats=RiskStatsSchema(
-            total=total,
-            pending=pending,
-            confirmed=confirmed,
-            ignored=ignored
-        )
+            total=total, pending=pending, confirmed=confirmed, ignored=ignored
+        ),
     )
 
 
@@ -582,7 +673,7 @@ async def export_review_document(
     task_id: str,
     request: ReviewExportRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     导出用户修改后的合同文档（清洁版 docx）。
@@ -590,29 +681,31 @@ async def export_review_document(
     前端发送用户编辑后的完整合同文本，后端生成格式化 docx 文件返回。
     """
     # 验证任务存在且属于当前用户
-    task = db.query(ReviewTask).filter(
-        ReviewTask.id == task_id,
-        ReviewTask.user_id == current_user.id
-    ).first()
+    task = (
+        db.query(ReviewTask)
+        .filter(ReviewTask.id == task_id, ReviewTask.user_id == current_user.id)
+        .first()
+    )
 
     if not task:
-        raise HTTPException(status_code=404, detail=f"审查任务 {task_id} 不存在或无权访问")
+        raise HTTPException(
+            status_code=404, detail=f"审查任务 {task_id} 不存在或无权访问"
+        )
 
     # 生成文件名
     original_name = task.file_name
-    base_name = original_name.rsplit('.', 1)[0] if original_name else "合同"
+    base_name = original_name.rsplit(".", 1)[0] if original_name else "合同"
     export_file_name = request.file_name or f"{base_name}_修改版.docx"
 
     # 导出为 docx
     docx_buffer = DocumentExporter.export_text_to_docx(
-        text=request.final_text,
-        file_name=export_file_name,
-        title=base_name
+        text=request.final_text, file_name=export_file_name, title=base_name
     )
 
     # 返回文件流
-    from fastapi.responses import StreamingResponse
     from urllib.parse import quote
+
+    from fastapi.responses import StreamingResponse
 
     # URL 编码文件名（处理中文）
     encoded_filename = quote(export_file_name)
@@ -621,5 +714,5 @@ async def export_review_document(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
-        }
+        },
     )

@@ -1,0 +1,28 @@
+数据库连接信息
+Host: 82.156.132.43
+Port: 3306
+Database: complass
+User: complass
+Password: 123456
+
+后端的地址
+http://82.156.132.43:8080
+前端地址
+http://82.156.132.43/
+
+服务器配置
+后端服务：complass-service 容器，监听 8080
+MySQL：complass-mysql 容器，监听 3306
+数据目录：服务器 /opt/complass-service/mysql_data
+日志目录：服务器 /opt/complass-service/logs
+启动方式：docker compose up -d
+自动部署：systemd timer 每分钟检查仓库，有更新就重新 docker build + docker compose up -d
+
+coze  Token：
+token：pat_GhIV3iXN7geEISZzJcm25fwwcYb5XSkG4DqAxe2fxA8mN4CAzFMtRrVVuwys2pzD
+
+合同比对 workflow_id：
+7640097297989451811
+
+合同审查 workflow_id：
+7644959342222999604

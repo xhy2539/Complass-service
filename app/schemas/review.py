@@ -1,15 +1,17 @@
 """合同审查相关的数据模型。"""
 
-from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from pydantic import Field
 
-from app.schemas.comparison import ComparisonTaskSchema, ComparisonRiskPointSchema
+from app.schemas.comparison import ComparisonRiskPointSchema
+from app.schemas.comparison import ComparisonTaskSchema
 
 
 class ParagraphSchema(BaseModel):
     """段落 schema。"""
+
     id: str
     review_task_id: str
     index: int
@@ -28,6 +30,7 @@ class ParagraphSchema(BaseModel):
 
 class SentenceSchema(BaseModel):
     """句子 schema。"""
+
     id: str
     review_task_id: str
     index: int
@@ -43,6 +46,7 @@ class SentenceSchema(BaseModel):
 
 class RiskPointSchema(BaseModel):
     """风险点 schema。"""
+
     id: str
     title: str
     level: str
@@ -77,6 +81,7 @@ class RiskPointSchema(BaseModel):
 
 class RiskStatsSchema(BaseModel):
     """风险统计 schema。"""
+
     total: int = 0
     confirmed: int = 0
     ignored: int = 0
@@ -85,6 +90,7 @@ class RiskStatsSchema(BaseModel):
 
 class ReviewTaskSchema(BaseModel):
     """审查任务 schema。"""
+
     id: str
     file_name: str
     file_type: str
@@ -119,12 +125,14 @@ class ReviewTaskSchema(BaseModel):
 
 class ReviewTaskCreateResponse(BaseModel):
     """创建审查任务响应。"""
+
     task_id: str
     message: str = "审查任务创建成功"
 
 
 class ReviewTaskListResponse(BaseModel):
     """审查任务列表响应（带分页信息）。"""
+
     tasks: list[ReviewTaskSchema]
     total: int
     skip: int
@@ -133,6 +141,7 @@ class ReviewTaskListResponse(BaseModel):
 
 class ReviewTaskQueryResponse(BaseModel):
     """查询审查任务响应。"""
+
     task: ReviewTaskSchema
     risk_points: list[RiskPointSchema] = []
     message: str = "查询成功"
@@ -140,6 +149,7 @@ class ReviewTaskQueryResponse(BaseModel):
 
 class ReviewRiskListResponse(BaseModel):
     """审查任务的风险点列表响应。"""
+
     task_id: str
     risk_points: list[RiskPointSchema]
     total: int
@@ -148,6 +158,7 @@ class ReviewRiskListResponse(BaseModel):
 
 class ComparisonRiskListResponse(BaseModel):
     """比对任务的风险点列表响应。"""
+
     task_id: str
     risk_points: list[ComparisonRiskPointSchema]
     total: int
@@ -156,6 +167,7 @@ class ComparisonRiskListResponse(BaseModel):
 
 class ComparisonTaskListResponse(BaseModel):
     """比对任务列表响应（带分页信息）。"""
+
     tasks: list[ComparisonTaskSchema]
     total: int
     skip: int
@@ -164,19 +176,24 @@ class ComparisonTaskListResponse(BaseModel):
 
 class ReviewExportRequest(BaseModel):
     """导出合同请求（接收用户修改后的文本）。"""
+
     final_text: str = Field(..., description="用户修改后的合同完整文本")
     file_name: Optional[str] = Field(None, description="导出的文件名")
 
 
 class RiskStatusUpdateRequest(BaseModel):
     """更新风险状态请求。"""
+
     status: str = Field(..., description="新状态: pending/confirmed/ignored")
-    ignore_reason: Optional[str] = Field(None, description="忽略原因（当 status=ignored 时）")
+    ignore_reason: Optional[str] = Field(
+        None, description="忽略原因（当 status=ignored 时）"
+    )
     review_comment: Optional[str] = Field(None, description="人工复核备注")
 
 
 class RiskStatusUpdateResponse(BaseModel):
     """更新风险状态响应。"""
+
     risk_id: str
     old_status: str
     new_status: str
@@ -185,6 +202,7 @@ class RiskStatusUpdateResponse(BaseModel):
 
 class RiskListResponse(BaseModel):
     """风险点列表响应。"""
+
     task_id: str
     risk_points: list[RiskPointSchema]
     total: int

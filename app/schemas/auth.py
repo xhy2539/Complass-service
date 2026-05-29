@@ -3,24 +3,31 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel
+from pydantic import EmailStr
+from pydantic import Field
 
 
 class UserRegisterRequest(BaseModel):
     """用户注册请求。"""
+
     email: EmailStr = Field(..., description="邮箱地址")
     nickname: str = Field(..., min_length=1, max_length=100, description="昵称")
-    password: str = Field(..., min_length=6, max_length=128, description="密码（至少6位）")
+    password: str = Field(
+        ..., min_length=6, max_length=128, description="密码（至少6位）"
+    )
 
 
 class UserLoginRequest(BaseModel):
     """用户登录请求。"""
+
     email: EmailStr = Field(..., description="邮箱地址")
     password: str = Field(..., description="密码")
 
 
 class TokenResponse(BaseModel):
     """登录/注册成功响应。"""
+
     access_token: str
     token_type: str = "bearer"
     expires_in: int  # 秒
@@ -29,6 +36,7 @@ class TokenResponse(BaseModel):
 
 class UserInfo(BaseModel):
     """用户信息。"""
+
     id: str
     email: str
     nickname: str
@@ -43,6 +51,7 @@ class UserInfo(BaseModel):
 
 class UserResponse(BaseModel):
     """用户信息响应。"""
+
     id: str
     email: str
     nickname: str

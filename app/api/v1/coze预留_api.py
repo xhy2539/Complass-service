@@ -1,22 +1,26 @@
 """Coze AI 能力预留接口，按已发布工作流格式提供联调入口。"""
 
-from typing import Annotated, Any, Optional
+from typing import Annotated
+from typing import Any
+from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter
+from fastapi import File
+from fastapi import HTTPException
+from fastapi import UploadFile
 from pydantic import BaseModel
 
-from app.services.coze_service import (
-    CozeServiceError,
-    build_comparison_workflow_input,
-    get_coze_service,
-    normalize_comparison_workflow_result,
-)
+from app.services.coze_service import CozeServiceError
+from app.services.coze_service import build_comparison_workflow_input
+from app.services.coze_service import get_coze_service
+from app.services.coze_service import normalize_comparison_workflow_result
 
 coze预留_router = APIRouter(prefix="/coze", tags=["Coze AI 能力（预留）"])
 
 
 class ContractComparisonInput(BaseModel):
     """合同比对任务输入模型，对齐 Coze 文档格式。"""
+
     task_type: str = "contract_comparison"
     old_text: str = """技术服务合同
 
@@ -135,6 +139,7 @@ class ContractComparisonInput(BaseModel):
 
 class EnhancedItemSchema(BaseModel):
     """增强结果项 schema，对齐 Coze 文档输出字段。"""
+
     category: str
     change_type: str
     evidence: str
@@ -149,6 +154,7 @@ class EnhancedItemSchema(BaseModel):
 
 class ContractComparisonOutput(BaseModel):
     """合同比对任务输出模型，对齐 Coze 文档结构。"""
+
     success: bool
     enhanced: list[EnhancedItemSchema]
     total_risks: int
@@ -156,7 +162,9 @@ class ContractComparisonOutput(BaseModel):
 
 
 @coze预留_router.post("/contract/comparison", response_model=ContractComparisonOutput)
-async def analyze_contract_comparison(input_data: ContractComparisonInput) -> ContractComparisonOutput:
+async def analyze_contract_comparison(
+    input_data: ContractComparisonInput,
+) -> ContractComparisonOutput:
     """
     合同版本比对语义增强接口（联调接口）。
 
@@ -184,24 +192,28 @@ async def analyze_contract_comparison(input_data: ContractComparisonInput) -> Co
             diff_stats={"total": 0, "added": 0, "deleted": 0, "modified": 0},
             diff_texts=[],
         )
-        result = await coze_service.call_workflow(coze_service.comparison_workflow_id, parameters)
+        result = await coze_service.call_workflow(
+            coze_service.comparison_workflow_id, parameters
+        )
         normalized = normalize_comparison_workflow_result(result)
 
         # 构建 enhanced 列表，确保字段完整对应 Coze 文档
         enhanced_list = []
         for item in normalized.get("enhanced", []):
-            enhanced_list.append(EnhancedItemSchema(
-                category=item.get("category", ""),
-                change_type=item.get("change_type", "modified"),
-                evidence=item.get("evidence", ""),
-                impact=item.get("impact", ""),
-                new_quote=item.get("new_quote") or item.get("new"),
-                old_quote=item.get("old_quote") or item.get("old"),
-                original=item.get("original", ""),
-                risk_level=item.get("risk_level", "low"),
-                suggestion=item.get("suggestion", ""),
-                summary=item.get("summary", ""),
-            ))
+            enhanced_list.append(
+                EnhancedItemSchema(
+                    category=item.get("category", ""),
+                    change_type=item.get("change_type", "modified"),
+                    evidence=item.get("evidence", ""),
+                    impact=item.get("impact", ""),
+                    new_quote=item.get("new_quote") or item.get("new"),
+                    old_quote=item.get("old_quote") or item.get("old"),
+                    original=item.get("original", ""),
+                    risk_level=item.get("risk_level", "low"),
+                    suggestion=item.get("suggestion", ""),
+                    summary=item.get("summary", ""),
+                )
+            )
 
         return ContractComparisonOutput(
             success=normalized.get("success", True),
@@ -216,6 +228,7 @@ async def analyze_contract_comparison(input_data: ContractComparisonInput) -> Co
 
 class SingleContractAnalysisOutput(BaseModel):
     """单合同审查任务输出模型，对齐 Coze 文档结构。"""
+
     agreeCount: str
     highlevelriskCount: str
     lowlevelriskCount: str
@@ -224,7 +237,7 @@ class SingleContractAnalysisOutput(BaseModel):
 
 @coze预留_router.post("/contract/review", response_model=SingleContractAnalysisOutput)
 async def analyze_single_contract(
-    file: Annotated[UploadFile, File(description="合同文件")]
+    file: Annotated[UploadFile, File(description="合同文件")],
 ) -> SingleContractAnalysisOutput:
     """
     单合同 AI 风险分析接口。

@@ -8,6 +8,7 @@ from typing import Optional
 @dataclass
 class SentenceDiff:
     """单个句子比对结果。"""
+
     index: int
     old_text: Optional[str]
     new_text: Optional[str]
@@ -27,7 +28,7 @@ def split_into_sentences(text: str) -> list[str]:
     Returns:
         句子列表
     """
-    sentences = re.split(r'(?<=[。！？；\n])\s*', text)
+    sentences = re.split(r"(?<=[。！？；\n])\s*", text)
     return [s.strip() for s in sentences if s.strip()]
 
 
@@ -53,7 +54,9 @@ def compute_similarity(text1: str, text2: str) -> float:
     return intersection / union if union > 0 else 0.0
 
 
-def sentence_diff(old_text: str, new_text: str, similarity_threshold: float = 0.6) -> list[SentenceDiff]:
+def sentence_diff(
+    old_text: str, new_text: str, similarity_threshold: float = 0.6
+) -> list[SentenceDiff]:
     """
     对比两个文本，返回句子级差异。
 
@@ -87,32 +90,38 @@ def sentence_diff(old_text: str, new_text: str, similarity_threshold: float = 0.
         if best_similarity >= similarity_threshold:
             used_old_indices.add(best_match_idx)
             used_new_indices.add(i)
-            result.append(SentenceDiff(
-                index=len(result),
-                old_text=old_sentences[best_match_idx],
-                new_text=new_sent,
-                change_type="modified",
-                similarity=best_similarity
-            ))
+            result.append(
+                SentenceDiff(
+                    index=len(result),
+                    old_text=old_sentences[best_match_idx],
+                    new_text=new_sent,
+                    change_type="modified",
+                    similarity=best_similarity,
+                )
+            )
         else:
             used_new_indices.add(i)
-            result.append(SentenceDiff(
-                index=len(result),
-                old_text=None,
-                new_text=new_sent,
-                change_type="added",
-                similarity=0.0
-            ))
+            result.append(
+                SentenceDiff(
+                    index=len(result),
+                    old_text=None,
+                    new_text=new_sent,
+                    change_type="added",
+                    similarity=0.0,
+                )
+            )
 
     for j, old_sent in enumerate(old_sentences):
         if j not in used_old_indices:
-            result.append(SentenceDiff(
-                index=len(result),
-                old_text=old_sent,
-                new_text=None,
-                change_type="deleted",
-                similarity=0.0
-            ))
+            result.append(
+                SentenceDiff(
+                    index=len(result),
+                    old_text=old_sent,
+                    new_text=None,
+                    change_type="deleted",
+                    similarity=0.0,
+                )
+            )
 
     result.sort(key=lambda x: x.index)
 
@@ -125,7 +134,7 @@ def sentence_diff(old_text: str, new_text: str, similarity_threshold: float = 0.
 def sentence_diff_with_positions(
     old_comparison_data: dict,
     new_comparison_data: dict,
-    similarity_threshold: float = 0.6
+    similarity_threshold: float = 0.6,
 ) -> list[SentenceDiff]:
     """
     使用带位置的句子数据进行比对（推荐用于生产环境）。
@@ -160,52 +169,64 @@ def sentence_diff_with_positions(
         if best_similarity >= similarity_threshold:
             used_old_indices.add(best_match_idx)
             used_new_indices.add(i)
-            result.append(SentenceDiff(
-                index=len(result),
-                old_text=old_sentences[best_match_idx]["text"],
-                new_text=new_sentences[i]["text"],
-                change_type="modified",
-                similarity=best_similarity,
-                old_position={
-                    "char_offset_start": old_sentences[best_match_idx]["char_offset_start"],
-                    "char_offset_end": old_sentences[best_match_idx]["char_offset_end"],
-                    "paragraph_index": old_sentences[best_match_idx]["paragraph_index"]
-                },
-                new_position={
-                    "char_offset_start": new_sentences[i]["char_offset_start"],
-                    "char_offset_end": new_sentences[i]["char_offset_end"],
-                    "paragraph_index": new_sentences[i]["paragraph_index"]
-                }
-            ))
+            result.append(
+                SentenceDiff(
+                    index=len(result),
+                    old_text=old_sentences[best_match_idx]["text"],
+                    new_text=new_sentences[i]["text"],
+                    change_type="modified",
+                    similarity=best_similarity,
+                    old_position={
+                        "char_offset_start": old_sentences[best_match_idx][
+                            "char_offset_start"
+                        ],
+                        "char_offset_end": old_sentences[best_match_idx][
+                            "char_offset_end"
+                        ],
+                        "paragraph_index": old_sentences[best_match_idx][
+                            "paragraph_index"
+                        ],
+                    },
+                    new_position={
+                        "char_offset_start": new_sentences[i]["char_offset_start"],
+                        "char_offset_end": new_sentences[i]["char_offset_end"],
+                        "paragraph_index": new_sentences[i]["paragraph_index"],
+                    },
+                )
+            )
         else:
             used_new_indices.add(i)
-            result.append(SentenceDiff(
-                index=len(result),
-                old_text=None,
-                new_text=new_sentences[i]["text"],
-                change_type="added",
-                similarity=0.0,
-                new_position={
-                    "char_offset_start": new_sentences[i]["char_offset_start"],
-                    "char_offset_end": new_sentences[i]["char_offset_end"],
-                    "paragraph_index": new_sentences[i]["paragraph_index"]
-                }
-            ))
+            result.append(
+                SentenceDiff(
+                    index=len(result),
+                    old_text=None,
+                    new_text=new_sentences[i]["text"],
+                    change_type="added",
+                    similarity=0.0,
+                    new_position={
+                        "char_offset_start": new_sentences[i]["char_offset_start"],
+                        "char_offset_end": new_sentences[i]["char_offset_end"],
+                        "paragraph_index": new_sentences[i]["paragraph_index"],
+                    },
+                )
+            )
 
     for j, old_sent in enumerate(old_sentences):
         if j not in used_old_indices:
-            result.append(SentenceDiff(
-                index=len(result),
-                old_text=old_sentences[j]["text"],
-                new_text=None,
-                change_type="deleted",
-                similarity=0.0,
-                old_position={
-                    "char_offset_start": old_sentences[j]["char_offset_start"],
-                    "char_offset_end": old_sentences[j]["char_offset_end"],
-                    "paragraph_index": old_sentences[j]["paragraph_index"]
-                }
-            ))
+            result.append(
+                SentenceDiff(
+                    index=len(result),
+                    old_text=old_sentences[j]["text"],
+                    new_text=None,
+                    change_type="deleted",
+                    similarity=0.0,
+                    old_position={
+                        "char_offset_start": old_sentences[j]["char_offset_start"],
+                        "char_offset_end": old_sentences[j]["char_offset_end"],
+                        "paragraph_index": old_sentences[j]["paragraph_index"],
+                    },
+                )
+            )
 
     result.sort(key=lambda x: x.index)
 
@@ -240,6 +261,7 @@ def summarize_diff(diffs: list[SentenceDiff]) -> dict:
         "deleted_texts": [d.old_text for d in diffs if d.change_type == "deleted"],
         "modified_texts": [
             {"old": d.old_text, "new": d.new_text, "similarity": d.similarity}
-            for d in diffs if d.change_type == "modified"
-        ]
+            for d in diffs
+            if d.change_type == "modified"
+        ],
     }

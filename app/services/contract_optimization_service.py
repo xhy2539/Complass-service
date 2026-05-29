@@ -6,7 +6,10 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.database import AcceptedSuggestion, OptimizedContractVersion, ReviewTask, RiskPoint
+from app.models.database import AcceptedSuggestion
+from app.models.database import OptimizedContractVersion
+from app.models.database import ReviewTask
+from app.models.database import RiskPoint
 
 
 def build_replacements(risk_points: list[Any]) -> list[dict]:
@@ -32,14 +35,16 @@ def build_replacements(risk_points: list[Any]) -> list[dict]:
         if start is None or end is None:
             continue
 
-        replacements.append({
-            "risk_id": getattr(risk, "id"),
-            "start": int(start),
-            "end": int(end),
-            "original_text": original_text,
-            "replace_text": replace_text,
-            "position": position,
-        })
+        replacements.append(
+            {
+                "risk_id": risk.id,
+                "start": int(start),
+                "end": int(end),
+                "original_text": original_text,
+                "replace_text": replace_text,
+                "position": position,
+            }
+        )
 
     validate_replacements(replacements)
     return replacements
@@ -64,7 +69,7 @@ def apply_replacements(original_text: str, replacements: list[dict]) -> str:
     validate_replacements(replacements)
     result = original_text
     for item in sorted(replacements, key=lambda value: value["start"], reverse=True):
-        result = result[:item["start"]] + item["replace_text"] + result[item["end"]:]
+        result = result[: item["start"]] + item["replace_text"] + result[item["end"] :]
     return result
 
 
@@ -81,9 +86,12 @@ def create_optimized_version(
         raise ValueError("没有可采纳的替换建议")
 
     optimized_text = apply_replacements(review_task.text or "", replacements)
-    max_version_no = db.query(func.max(OptimizedContractVersion.version_no)).filter(
-        OptimizedContractVersion.review_task_id == review_task.id
-    ).scalar() or 0
+    max_version_no = (
+        db.query(func.max(OptimizedContractVersion.version_no))
+        .filter(OptimizedContractVersion.review_task_id == review_task.id)
+        .scalar()
+        or 0
+    )
 
     version = OptimizedContractVersion(
         id=_uuid(),
@@ -98,14 +106,16 @@ def create_optimized_version(
     db.flush()
 
     for item in replacements:
-        db.add(AcceptedSuggestion(
-            id=_uuid(),
-            optimized_version_id=version.id,
-            risk_point_id=item["risk_id"],
-            original_text=item.get("original_text"),
-            replace_text=item["replace_text"],
-            position=item.get("position"),
-        ))
+        db.add(
+            AcceptedSuggestion(
+                id=_uuid(),
+                optimized_version_id=version.id,
+                risk_point_id=item["risk_id"],
+                original_text=item.get("original_text"),
+                replace_text=item["replace_text"],
+                position=item.get("position"),
+            )
+        )
 
     db.flush()
     return version

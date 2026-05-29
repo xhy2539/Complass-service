@@ -43,7 +43,7 @@ OLD_IMAGE_ID="$(docker inspect --format='{{.Image}}' complass-service 2>/dev/nul
 git pull --ff-only origin dev
 
 log "Building image..."
-docker build -t "${IMAGE_NAME}" .
+docker build --no-cache -t "${IMAGE_NAME}" .
 
 log "Redeploying app container..."
 docker compose up -d complass-service

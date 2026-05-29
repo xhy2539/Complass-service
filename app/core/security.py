@@ -1,9 +1,12 @@
 """JWT 认证安全模块，包含 token 生成、验证和密码哈希功能。"""
 
-from datetime import datetime, timedelta
-from typing import Any, Optional
+from datetime import datetime
+from datetime import timedelta
+from typing import Any
+from typing import Optional
 
-from jose import JWTError, jwt
+from jose import JWTError
+from jose import jwt
 from passlib.context import CryptContext
 
 from app.core.complass_service_settings import get_complass_service_settings
@@ -24,7 +27,9 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def create_access_token(data: dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    data: dict[str, Any], expires_delta: Optional[timedelta] = None
+) -> str:
     """
     创建 JWT access token。
 
@@ -40,13 +45,13 @@ def create_access_token(data: dict[str, Any], expires_delta: Optional[timedelta]
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+        expire = datetime.utcnow() + timedelta(
+            minutes=settings.jwt_access_token_expire_minutes
+        )
 
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(
-        to_encode,
-        settings.jwt_secret_key,
-        algorithm=settings.jwt_algorithm
+        to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
     )
     return encoded_jwt
 
@@ -63,9 +68,7 @@ def decode_access_token(token: str) -> Optional[dict[str, Any]]:
     """
     try:
         payload = jwt.decode(
-            token,
-            settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm]
+            token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
         )
         return payload
     except JWTError:

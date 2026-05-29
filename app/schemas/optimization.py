@@ -2,17 +2,20 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from pydantic import Field
 
 
 class ApplySuggestionsRequest(BaseModel):
     """采纳建议生成优化合同请求。"""
+
     risk_ids: list[str] = Field(..., min_length=1)
     title: Optional[str] = None
 
 
 class OptimizedContractVersionResponse(BaseModel):
     """优化合同版本响应。"""
+
     id: str
     review_task_id: str
     version_no: int
@@ -25,6 +28,7 @@ class OptimizedContractVersionResponse(BaseModel):
 
 class ApplySuggestionsResponse(BaseModel):
     """采纳建议响应。"""
+
     success: bool
     version: OptimizedContractVersionResponse
     message: str = "优化合同版本已生成"

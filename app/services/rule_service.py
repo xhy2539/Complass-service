@@ -7,10 +7,18 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.database import ReviewRule, ReviewRuleVersion, RuleVersionStatus
+from app.models.database import ReviewRule
+from app.models.database import ReviewRuleVersion
+from app.models.database import RuleVersionStatus
 
 VALID_RISK_LEVELS = {"高", "中", "低"}
-REQUIRED_RULE_FIELDS = ["rule_code", "contract_type", "review_module", "risk_name", "default_risk_level"]
+REQUIRED_RULE_FIELDS = [
+    "rule_code",
+    "contract_type",
+    "review_module",
+    "risk_name",
+    "default_risk_level",
+]
 
 
 def validate_rule_payload(payload: dict) -> None:
@@ -26,9 +34,11 @@ def validate_rule_payload(payload: dict) -> None:
 
 def get_active_rule_version(db: Session) -> Optional[ReviewRuleVersion]:
     """获取当前激活规则版本。"""
-    return db.query(ReviewRuleVersion).filter(
-        ReviewRuleVersion.status == RuleVersionStatus.ACTIVE
-    ).first()
+    return (
+        db.query(ReviewRuleVersion)
+        .filter(ReviewRuleVersion.status == RuleVersionStatus.ACTIVE)
+        .first()
+    )
 
 
 def create_rule_version(
@@ -54,7 +64,9 @@ def create_rule_version(
 
 def activate_rule_version(db: Session, version_id: str) -> ReviewRuleVersion:
     """激活指定规则版本，并归档旧激活版本。"""
-    version = db.query(ReviewRuleVersion).filter(ReviewRuleVersion.id == version_id).first()
+    version = (
+        db.query(ReviewRuleVersion).filter(ReviewRuleVersion.id == version_id).first()
+    )
     if not version:
         raise ValueError("规则版本不存在")
 
@@ -71,7 +83,9 @@ def activate_rule_version(db: Session, version_id: str) -> ReviewRuleVersion:
 
 def list_rule_versions(db: Session) -> list[ReviewRuleVersion]:
     """查询规则版本列表。"""
-    return db.query(ReviewRuleVersion).order_by(ReviewRuleVersion.version_no.desc()).all()
+    return (
+        db.query(ReviewRuleVersion).order_by(ReviewRuleVersion.version_no.desc()).all()
+    )
 
 
 def list_rules(
@@ -135,18 +149,25 @@ def delete_rule(db: Session, rule_id: str) -> None:
     db.flush()
 
 
-def build_enabled_rules_snapshot(db: Session, contract_type: str) -> tuple[ReviewRuleVersion, list[dict]]:
+def build_enabled_rules_snapshot(
+    db: Session, contract_type: str
+) -> tuple[ReviewRuleVersion, list[dict]]:
     """读取当前激活版本中适用于合同类型的启用规则。"""
     version = get_active_rule_version(db)
     if not version:
         raise ValueError("当前没有激活的规则版本")
 
     types = {"通用", contract_type or "通用"}
-    rules = db.query(ReviewRule).filter(
-        ReviewRule.version_id == version.id,
-        ReviewRule.enabled == True,  # noqa: E712
-        ReviewRule.contract_type.in_(types),
-    ).order_by(ReviewRule.rule_code.asc()).all()
+    rules = (
+        db.query(ReviewRule)
+        .filter(
+            ReviewRule.version_id == version.id,
+            ReviewRule.enabled == True,  # noqa: E712
+            ReviewRule.contract_type.in_(types),
+        )
+        .order_by(ReviewRule.rule_code.asc())
+        .all()
+    )
 
     return version, [_rule_to_snapshot(rule) for rule in rules]
 
@@ -175,17 +196,25 @@ def _rule_to_snapshot(rule: ReviewRule) -> dict:
 
 def _ensure_version_exists(db: Session, version_id: str) -> None:
     """确认规则版本存在。"""
-    exists = db.query(ReviewRuleVersion.id).filter(ReviewRuleVersion.id == version_id).first()
+    exists = (
+        db.query(ReviewRuleVersion.id)
+        .filter(ReviewRuleVersion.id == version_id)
+        .first()
+    )
     if not exists:
         raise ValueError("规则版本不存在")
 
 
 def _ensure_rule_code_unique(db: Session, version_id: str, rule_code: str) -> None:
     """确认同版本规则编号唯一。"""
-    exists = db.query(ReviewRule.id).filter(
-        ReviewRule.version_id == version_id,
-        ReviewRule.rule_code == rule_code,
-    ).first()
+    exists = (
+        db.query(ReviewRule.id)
+        .filter(
+            ReviewRule.version_id == version_id,
+            ReviewRule.rule_code == rule_code,
+        )
+        .first()
+    )
     if exists:
         raise ValueError("同一规则版本下规则编号已存在")
 

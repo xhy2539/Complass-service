@@ -5,8 +5,8 @@ from io import BytesIO
 from typing import Optional
 
 from docx import Document
-from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt
 
 
 class DocumentExporter:
@@ -14,9 +14,7 @@ class DocumentExporter:
 
     @staticmethod
     def export_text_to_docx(
-        text: str,
-        file_name: str = "contract.docx",
-        title: Optional[str] = None
+        text: str, file_name: str = "contract.docx", title: Optional[str] = None
     ) -> BytesIO:
         """
         将纯文本导出为 docx 文件（清洁版）。
@@ -32,13 +30,12 @@ class DocumentExporter:
         doc = Document()
 
         # 设置默认字体和大小（宋体/ Times New Roman）
-        style = doc.styles['Normal']
-        style.font.name = 'Times New Roman'
+        style = doc.styles["Normal"]
+        style.font.name = "Times New Roman"
         style.font.size = Pt(12)
 
         # 按换行符拆分段落
-        lines = text.split('\n')
-        current_heading_level = 0
+        lines = text.split("\n")
 
         for line in lines:
             line = line.strip()
@@ -54,7 +51,9 @@ class DocumentExporter:
                 # 添加标题
                 heading = doc.add_heading(level=heading_level)
                 heading_run = heading.add_run(line)
-                heading_run.font.size = DocumentExporter._get_heading_size(heading_level)
+                heading_run.font.size = DocumentExporter._get_heading_size(
+                    heading_level
+                )
             else:
                 # 添加正文段落
                 p = doc.add_paragraph(line)
@@ -67,7 +66,7 @@ class DocumentExporter:
                 header = section.header
                 header_para = header.paragraphs[0]
                 header_para.text = title
-                header_para.style = 'Header'
+                header_para.style = "Header"
 
         # 保存到 BytesIO
         buffer = BytesIO()
@@ -83,19 +82,19 @@ class DocumentExporter:
         返回标题级别：0=正文, 1-3=标题
         """
         # 规则1：纯数字编号开头（1.  2.1  第一章 等）
-        if re.match(r'^第[一二三四五六七八九十]+[章节条]', line):
+        if re.match(r"^第[一二三四五六七八九十]+[章节条]", line):
             return 1
-        if re.match(r'^[零一二三四五六七八九十]+、', line):
+        if re.match(r"^[零一二三四五六七八九十]+、", line):
             return 2
-        if re.match(r'^\d+[.．]', line) and len(line) < 30:
+        if re.match(r"^\d+[.．]", line) and len(line) < 30:
             return 2
 
         # 规则2：特定关键词结尾（：等）
-        if line.endswith('：') or line.endswith(':'):
+        if line.endswith("：") or line.endswith(":"):
             return 2
 
         # 规则3：全角括号标题
-        if re.match(r'^【[^】]+】$', line):
+        if re.match(r"^【[^】]+】$", line):
             return 2
 
         # 规则4：短行且全是中文/符号（可能是标题）
@@ -125,7 +124,7 @@ class DocumentExporter:
         优先按空行拆分，其次按句号/分号+换行符。
         """
         # 先按换行符拆分
-        lines = text.split('\n')
+        lines = text.split("\n")
 
         paragraphs = []
         current = []
@@ -134,7 +133,7 @@ class DocumentExporter:
             line = line.strip()
             if not line:
                 if current:
-                    para = ' '.join(current)
+                    para = " ".join(current)
                     if para:
                         paragraphs.append(para)
                     current = []
@@ -143,7 +142,7 @@ class DocumentExporter:
 
         # 处理最后一段
         if current:
-            para = ' '.join(current)
+            para = " ".join(current)
             if para:
                 paragraphs.append(para)
 

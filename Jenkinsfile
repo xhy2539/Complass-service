@@ -22,13 +22,14 @@ pipeline {
                         sh '''
                             set -eux
                             REQUIREMENTS_HASH=".requirements_hash"
-                            CURRENT_HASH="$(sha256sum requirements.txt | cut -d" " -f1)"
+                            CURRENT_HASH="$(cat requirements.txt requirements-dev.txt | sha256sum | cut -d" " -f1)"
                             if [ ! -d .venv ] || [ ! -f "${REQUIREMENTS_HASH}" ] || [ "$(cat ${REQUIREMENTS_HASH})" != "${CURRENT_HASH}" ]; then
                                 rm -rf .venv
                                 (python3 -m venv .venv || python -m venv .venv)
                                 . .venv/bin/activate
                                 python -m pip install --upgrade pip
                                 python -m pip install -r requirements.txt
+                                python -m pip install -r requirements-dev.txt
                                 echo "${CURRENT_HASH}" > "${REQUIREMENTS_HASH}"
                             else
                                 echo ".venv is up to date"
@@ -41,7 +42,67 @@ pipeline {
                                 call .venv\\Scripts\\activate.bat
                                 python -m pip install --upgrade pip
                                 python -m pip install -r requirements.txt
+                                python -m pip install -r requirements-dev.txt
                             )
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Lint') {
+            steps {
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            set -eux
+                            . .venv/bin/activate
+                            ruff check app/
+                            ruff format --check app/
+                        '''
+                    } else {
+                        bat '''
+                            call .venv\\Scripts\\activate.bat
+                            ruff check app/
+                            ruff format --check app/
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Type Check') {
+            steps {
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            set -eux
+                            . .venv/bin/activate
+                            mypy app/ || true
+                        '''
+                    } else {
+                        bat '''
+                            call .venv\\Scripts\\activate.bat
+                            mypy app/ || true
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            set -eux
+                            . .venv/bin/activate
+                            python -m pytest tests/ -v --tb=short
+                        '''
+                    } else {
+                        bat '''
+                            call .venv\\Scripts\\activate.bat
+                            python -m pytest tests/ -v --tb=short
                         '''
                     }
                 }
@@ -99,7 +160,7 @@ pipeline {
                             set -eux
                             cd ${DEPLOY_DIR}
                             git pull --ff-only
-                            docker build -t complass-service:latest .
+                            docker build --no-cache -t complass-service:latest .
                             docker compose up -d
                             docker compose ps
                             curl -f http://127.0.0.1:8080/health
