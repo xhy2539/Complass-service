@@ -1,7 +1,10 @@
 """合同文本脱敏服务。"""
 
+import io
 import re
 from dataclasses import dataclass
+
+from docx import Document
 
 
 @dataclass
@@ -106,6 +109,28 @@ def apply_sanitization_mappings(text: str, mappings: list[dict]) -> str:
         if placeholder and original:
             result = result.replace(original, placeholder)
     return result
+
+
+def sanitize_docx_bytes(file_content: bytes, mappings: list[dict]) -> bytes:
+    """在原 docx 结构上原地脱敏，保留格式，替换敏感文字为占位符。"""
+    doc = Document(io.BytesIO(file_content))
+
+    for para in doc.paragraphs:
+        for run in para.runs:
+            if run.text:
+                run.text = apply_sanitization_mappings(run.text, mappings)
+
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    for run in para.runs:
+                        if run.text:
+                            run.text = apply_sanitization_mappings(run.text, mappings)
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
 
 
 def _index_to_letter(index: int) -> str:

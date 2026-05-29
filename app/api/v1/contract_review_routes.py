@@ -40,6 +40,7 @@ from app.services.rule_service import build_enabled_rules_snapshot
 from app.services.rule_service import find_rule_snapshot
 from app.services.sanitization_service import restore_text_from_mapping
 from app.services.sanitization_service import sanitize_contract_text
+from app.services.sanitization_service import sanitize_docx_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -484,10 +485,11 @@ async def create_review_task(
             from app.services.coze_service import get_coze_service
 
             coze_service = get_coze_service()
+            sanitized_docx = sanitize_docx_bytes(content, sanitization.mappings)
             coze_result, usage = await coze_service.review_contract_file(
-                content=content,
+                content=sanitized_docx,
                 filename=parse_result.file_name,
-                content_type=file.content_type,
+                content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 rules=rules_snapshot,
                 rule_version_id=rule_version.id if rule_version else None,
                 contract_type=contract_type,

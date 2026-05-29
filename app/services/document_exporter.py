@@ -147,3 +147,22 @@ class DocumentExporter:
                 paragraphs.append(para)
 
         return paragraphs
+
+    @staticmethod
+    def text_to_docx_bytes(text: str) -> bytes:
+        """将纯文本转为 docx 文件字节，用于上传到 Coze。"""
+        doc = Document()
+        style = doc.styles["Normal"]
+        style.font.name = "Times New Roman"
+        style.font.size = Pt(12)
+
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line:
+                doc.add_paragraph()
+                continue
+            doc.add_paragraph(line)
+
+        buffer = BytesIO()
+        doc.save(buffer)
+        return buffer.getvalue()
