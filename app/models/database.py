@@ -30,6 +30,7 @@ class User(Base):
 
     id = Column(String(36), primary_key=True)  # UUID
     email = Column(String(255), unique=True, nullable=False, index=True)
+    phone = Column(String(20), nullable=False, default="")
     nickname = Column(String(100), nullable=False)
     hashed_password = Column(String(255), nullable=False)
 
@@ -53,6 +54,7 @@ class User(Base):
         return {
             "id": self.id,
             "email": self.email,
+            "phone": self.phone,
             "nickname": self.nickname,
             "is_active": self.is_active,
             "is_verified": self.is_verified,

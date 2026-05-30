@@ -58,6 +58,7 @@ async def register(
     用户注册。
 
     - email: 邮箱（唯一）
+    - phone: 手机号（必填）
     - nickname: 昵称
     - password: 密码（至少6位）
     """
@@ -72,6 +73,7 @@ async def register(
     user = User(
         id=_uuid(),
         email=request.email,
+        phone=request.phone,
         nickname=request.nickname,
         hashed_password=hash_password(request.password),
         is_active=True,
@@ -91,16 +93,19 @@ async def login(
     request: UserLoginRequest, db: Session = Depends(get_db)
 ) -> TokenResponse:
     """
-    用户登录。
+    用户登录，支持邮箱或手机号。
 
-    - email: 邮箱
+    - account: 邮箱或手机号
     - password: 密码
     """
-    # 查找用户
-    user = db.query(User).filter(User.email == request.email).first()
+    # 查找用户（邮箱或手机号）
+    account = request.account
+    user = (
+        db.query(User).filter((User.email == account) | (User.phone == account)).first()
+    )
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="邮箱或密码错误"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="账号或密码错误"
         )
 
     # 验证密码

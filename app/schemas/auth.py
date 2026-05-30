@@ -12,6 +12,7 @@ class UserRegisterRequest(BaseModel):
     """用户注册请求。"""
 
     email: EmailStr = Field(..., description="邮箱地址")
+    phone: str = Field(..., min_length=11, max_length=20, description="手机号")
     nickname: str = Field(..., min_length=1, max_length=100, description="昵称")
     password: str = Field(
         ..., min_length=6, max_length=128, description="密码（至少6位）"
@@ -19,9 +20,9 @@ class UserRegisterRequest(BaseModel):
 
 
 class UserLoginRequest(BaseModel):
-    """用户登录请求。"""
+    """用户登录请求，支持邮箱或手机号。"""
 
-    email: EmailStr = Field(..., description="邮箱地址")
+    account: str = Field(..., min_length=5, max_length=255, description="邮箱或手机号")
     password: str = Field(..., description="密码")
 
 
@@ -39,6 +40,7 @@ class UserInfo(BaseModel):
 
     id: str
     email: str
+    phone: str = ""
     nickname: str
     is_active: bool = True
     is_verified: bool = False
@@ -56,6 +58,7 @@ class UserResponse(BaseModel):
 
     id: str
     email: str
+    phone: str = ""
     nickname: str
     is_active: bool
     is_verified: bool
