@@ -224,105 +224,108 @@ def find_best_sentence_match(
 
 
 def find_best_paragraph_match(
-    title: str, reason: str, paragraphs_info: dict[int, dict]
+    evidence: str, paragraphs_info: dict[int, dict]
 ) -> tuple[Optional[dict], Optional[str]]:
     """
-    查找与风险点最匹配的段落。
+    查找与风险点证据最匹配的段落。
 
-    使用多策略匹配：
-    1. 关键词精确匹配
-    2. 文本相似度匹配
-    3. 回退策略：取风险点对应段落位置
+    使用 Coze 返回的证据原文进行包含匹配，定位风险点在合同原文中的位置。
 
     Args:
-        title: 风险标题
-        reason: 风险原因
+        evidence: Coze返回的证据/原文引用（已还原脱敏）
         paragraphs_info: 段落信息字典 {index: {text, char_offset_start, ...}}
 
     Returns:
         (position, original_text) 或 (None, None)
     """
-    search_text = f"{title} {reason}"
-    keywords = extract_keywords(search_text)
+    if not evidence or not paragraphs_info:
+        return None, None
 
+    # 策略1：精确包含匹配
+    # 查找证据文本被哪个段落包含，或段落文本被证据包含
     best_match = None
     best_score = 0.0
     matched_idx = None
 
-    # 策略1：关键词精确匹配
     for idx, para_info in paragraphs_info.items():
         para_text = para_info["text"]
-        match_count = sum(1 for kw in keywords if kw in para_text)
+        if not para_text:
+            continue
 
-        if match_count > best_score:
-            best_score = match_count
-            best_match = para_info
-            matched_idx = idx
-            # 如果关键词精确命中，分数更高
-            if any(kw == para_text[: len(kw)] for kw in keywords if len(kw) >= 4):
-                best_score += 0.5
+        if evidence in para_text:
+            # 证据完全在段落中，按长度占比打分（越短的段落匹配越精确）
+            score = len(evidence) / max(len(para_text), 1)
+            if score > best_score:
+                best_score = score
+                best_match = para_info
+                matched_idx = idx
+        elif para_text in evidence:
+            # 段落完全在证据中（证据跨了多个段落）
+            score = len(para_text) / max(len(evidence), 1)
+            if score > best_score:
+                best_score = score
+                best_match = para_info
+                matched_idx = idx
 
-    # 如果关键词匹配分数足够高，直接返回
-    if best_score >= 1.0:
+    if best_match is not None:
+        para_text = best_match["text"]
+        pos = para_text.find(evidence)
+        if pos >= 0:
+            # 精确匹配：返回 evidence 在全文中的精确偏移
+            exact_start = best_match["char_offset_start"] + pos
+            exact_end = exact_start + len(evidence)
+            return {
+                "paragraph_index": matched_idx,
+                "char_offset_start": exact_start,
+                "char_offset_end": exact_end,
+                "match_strategy": "containment_exact",
+            }, evidence
+        # 精确查找失败（evidence 可能被 Coze 轻微改写），回退到段落级偏移
         return {
             "paragraph_index": matched_idx,
             "char_offset_start": best_match["char_offset_start"],
             "char_offset_end": best_match["char_offset_end"],
-            "match_strategy": "keyword",
+            "match_strategy": "containment_paragraph",
         }, best_match["text"]
 
-    # 策略2：文本相似度匹配
-    # 取 title 和 reason 中最长的句子作为匹配目标
-    target_text = title if len(title) > len(reason) else reason
-    if not target_text.strip():
-        target_text = reason
-
-    best_similarity = 0.0
-    similarity_match = None
-    similarity_idx = None
+    # 策略2：字符重叠匹配（应对 Coze 对 evidence 做轻微改写的情况）
+    evidence_char_set = set(evidence)
+    best_overlap = 0
+    overlap_match = None
+    overlap_idx = None
 
     for idx, para_info in paragraphs_info.items():
-        # 计算与段落的相似度
-        sim_title = compute_text_similarity(target_text, para_info["text"])
-        sim_reason = (
-            compute_text_similarity(reason[:50], para_info["text"])
-            if len(reason) > 50
-            else compute_text_similarity(reason, para_info["text"])
-        )
+        para_text = para_info["text"]
+        if not para_text:
+            continue
+        common = len(evidence_char_set & set(para_text))
+        if common > best_overlap:
+            best_overlap = common
+            overlap_match = para_info
+            overlap_idx = idx
 
-        # 取两个相似度的最大值
-        max_sim = max(sim_title, sim_reason)
-
-        if max_sim > best_similarity:
-            best_similarity = max_sim
-            similarity_match = para_info
-            similarity_idx = idx
-
-    # 如果相似度超过阈值（0.3），使用相似度匹配结果
-    if best_similarity >= 0.3 and best_similarity > best_score:
+    min_overlap = len(evidence_char_set) * 0.5
+    if best_overlap >= min_overlap and overlap_match is not None:
+        # 尝试在段落内搜索 evidence（可能被轻微改写）
+        para_text = overlap_match["text"]
+        pos = para_text.find(evidence)
+        if pos >= 0:
+            exact_start = overlap_match["char_offset_start"] + pos
+            exact_end = exact_start + len(evidence)
+            return {
+                "paragraph_index": overlap_idx,
+                "char_offset_start": exact_start,
+                "char_offset_end": exact_end,
+                "match_strategy": "overlap_exact",
+            }, evidence
         return {
-            "paragraph_index": similarity_idx,
-            "char_offset_start": similarity_match["char_offset_start"],
-            "char_offset_end": similarity_match["char_offset_end"],
-            "match_strategy": "similarity",
-            "similarity_score": round(best_similarity, 2),
-        }, similarity_match["text"]
+            "paragraph_index": overlap_idx,
+            "char_offset_start": overlap_match["char_offset_start"],
+            "char_offset_end": overlap_match["char_offset_end"],
+            "match_strategy": "overlap",
+        }, overlap_match["text"]
 
-    # 策略3：回退策略
-    # 如果以上策略都没找到好的匹配，取中间位置的段落
-    if paragraphs_info:
-        para_indices = sorted(paragraphs_info.keys())
-        mid_idx = len(para_indices) // 2
-        fallback_idx = para_indices[mid_idx]
-        fallback_para = paragraphs_info[fallback_idx]
-
-        return {
-            "paragraph_index": fallback_idx,
-            "char_offset_start": fallback_para["char_offset_start"],
-            "char_offset_end": fallback_para["char_offset_end"],
-            "match_strategy": "fallback",
-        }, fallback_para["text"]
-
+    # 无法定位，返回 None 让调用方处理
     return None, None
 
 
@@ -502,10 +505,9 @@ async def create_review_task(
                     rp_data.get("suggestion") or "", sanitization.mappings
                 )
 
-                # 使用改进的匹配算法定位风险点
+                # 使用证据文本定位风险点在原文中的位置
                 position, original_text = find_best_paragraph_match(
-                    title=rp_data.get("title", ""),
-                    reason=reason,
+                    evidence=evidence,
                     paragraphs_info=paragraphs_info,
                 )
 
