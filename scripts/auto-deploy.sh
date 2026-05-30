@@ -8,6 +8,12 @@ HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8080/health}"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 die()  { log "FATAL: $*" >&2; exit 1; }
+notify() {
+    _key="${SERVERCHAN_KEY:-SCT357126TkY7NT14gipcfiCUmAc7z49Lz}"
+    curl -s -X POST "https://sctapi.ftqq.com/${_key}.send" \
+        -d "title=Complass 部署通知" \
+        -d "desp=$*" >/dev/null 2>&1 || true
+}
 
 # ---- concurrency guard ----
 if [ -f "${LOCK_FILE}" ]; then
@@ -53,11 +59,13 @@ log "Redeploying app container..."
 docker compose up -d complass-service
 
 log "Waiting for service to become healthy..."
-if curl -fsS --max-time 10 --retry 5 --retry-delay 3 "${HEALTH_URL}"; then
+sleep 5
+if curl -fsS --max-time 10 --retry 10 --retry-delay 3 "${HEALTH_URL}"; then
     echo
-    log "Deploy succeeded."
+    log "Deploy succeeded — $(git log -1 --format='%s' ${REMOTE_HEAD})"
     docker compose ps
     echo "${REMOTE_HEAD}" > "${DEPLOYED_HASH_FILE}"
+    notify "后端：$(git log -1 --format='%s' ${REMOTE_HEAD})"
 
     # Drop dangling images (old untagged layers from previous builds).
     docker image prune -f 2>/dev/null || true

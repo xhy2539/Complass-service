@@ -8,7 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
 
 from app.api.v1.audit_rules_api import audit_rules_router
+from app.api.v1.contract_comparison_routes import recover_pending_comparison_tasks
 from app.api.v1.contract_review_api import contract_review_api_router
+from app.api.v1.contract_review_routes import recover_pending_review_tasks
 from app.core.complass_service_settings import get_complass_service_settings
 from app.models.database_connection import init_db
 
@@ -25,6 +27,14 @@ security = HTTPBearer()
 async def lifespan(app: FastAPI):
     """应用生命周期管理，启动时初始化数据库。"""
     init_db()  # 启动时创建所有表
+    review_count = recover_pending_review_tasks()
+    comparison_count = recover_pending_comparison_tasks()
+    if review_count or comparison_count:
+        logging.info(
+            "Recovered pending tasks: reviews=%s, comparisons=%s",
+            review_count,
+            comparison_count,
+        )
     yield
 
 

@@ -23,6 +23,16 @@ services:
     networks:
       - complass
 
+  redis:
+    image: docker.1ms.run/library/redis:7-alpine
+    container_name: complass-redis
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - ./redis_data:/data
+    networks:
+      - complass
+
   complass-service:
     image: ${IMAGE:-complass-service:latest}
     container_name: complass-service
@@ -36,6 +46,7 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs
+      - ./task_uploads:/app/task_uploads
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health || exit 1"]
       interval: 30s
