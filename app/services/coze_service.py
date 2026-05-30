@@ -67,35 +67,10 @@ def build_comparison_workflow_input(
 
 
 def build_review_workflow_input(
-    file_id: str,
-    contract_type: str = "通用",
-    sanitized_text: str | None = None,
+    sanitized_text: str,
 ) -> dict[str, str]:
-    """构建合同审查 Coze 工作流输入（规则由 Coze 自行调 API 获取）。"""
-    payload = {
-        "file_id": file_id,
-        "contract_type": contract_type,
-        "sanitized_text": sanitized_text or "",
-        "sanitization_enabled": bool(sanitized_text),
-        "audit_rules_api_url": "http://82.156.132.43:8080/api/audit-rules",
-    }
-    return {"input": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}
-
-
-def build_review_workflow_object_input(
-    file_id: str,
-    contract_type: str = "通用",
-    sanitized_text: str | None = None,
-) -> dict[str, str]:
-    """构建合同审查 Coze 工作流输入（规则由 Coze 自行调 API 获取），兼容备选。"""
-    payload = {
-        "file_id": file_id,
-        "contract_type": contract_type,
-        "sanitized_text": sanitized_text or "",
-        "sanitization_enabled": bool(sanitized_text),
-        "audit_rules_api_url": "http://82.156.132.43:8080/api/audit-rules",
-    }
-    return {"input": json.dumps(payload, ensure_ascii=False)}
+    """构建合同审查 Coze 工作流输入。Coze 接收纯文本，自行识别合同类型并调规则接口。"""
+    return {"input": sanitized_text}
 
 
 def build_workflow_run_payload(
@@ -223,7 +198,7 @@ def normalize_review_workflow_result(result: dict[str, Any]) -> dict[str, Any]:
     for item in result.get("output") or []:
         # 跳过"通过"的项，只处理有风险的项
         risk_level = item.get("risk", "")
-        if risk_level == "通过":
+        if risk_level in ("通过", "pass"):
             continue
 
         logger.info(f"[Coze] 处理风险点 item: {json.dumps(item, ensure_ascii=False)}")
@@ -416,36 +391,14 @@ class CozeService:
 
     async def review_contract_file(
         self,
-        content: bytes,
-        filename: str,
-        content_type: str | None = None,
-        contract_type: str = "通用",
-        sanitized_text: str | None = None,
+        sanitized_text: str,
     ) -> tuple[dict[str, Any], dict[str, int]]:
-        """上传合同文件后调用合同审查工作流。规则由 Coze 自行调 API 获取。返回 (业务结果, token用量)。"""
-        file_id = await self.upload_file(content, filename, content_type)
-        logger.info(
-            f"[Coze] 开始审查合同: file_id={file_id}, workflow_id={self.review_workflow_id}"
+        """调用合同审查工作流，直接传脱敏文本。返回 (业务结果, token用量)。"""
+        logger.info(f"[Coze] 开始审查合同: workflow_id={self.review_workflow_id}")
+        raw_result = await self.call_workflow(
+            self.review_workflow_id,
+            build_review_workflow_input(sanitized_text),
         )
-        try:
-            raw_result = await self.call_workflow(
-                self.review_workflow_id,
-                build_review_workflow_input(
-                    file_id,
-                    contract_type=contract_type,
-                    sanitized_text=sanitized_text,
-                ),
-            )
-        except CozeServiceError:
-            logger.warning("[Coze] JSON格式调用失败，尝试对象格式重试")
-            raw_result = await self.call_workflow(
-                self.review_workflow_id,
-                build_review_workflow_object_input(
-                    file_id,
-                    contract_type=contract_type,
-                    sanitized_text=sanitized_text,
-                ),
-            )
         return normalize_review_workflow_result(
             raw_result["business_data"]
         ), raw_result["usage"]

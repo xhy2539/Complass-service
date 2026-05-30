@@ -38,7 +38,6 @@ from app.services.document_parser import DocumentParseError
 from app.services.document_parser import DocumentParser
 from app.services.sanitization_service import restore_text_from_mapping
 from app.services.sanitization_service import sanitize_contract_text
-from app.services.sanitization_service import sanitize_docx_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -469,13 +468,8 @@ async def create_review_task(
             from app.services.coze_service import get_coze_service
 
             coze_service = get_coze_service()
-            sanitized_docx = sanitize_docx_bytes(content, sanitization.mappings)
             coze_result, usage = await coze_service.review_contract_file(
-                content=sanitized_docx,
-                filename=parse_result.file_name,
-                content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                contract_type=contract_type,
-                sanitized_text=sanitization.sanitized_text,
+                sanitization.sanitized_text,
             )
 
             # 更新任务结果
