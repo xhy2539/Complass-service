@@ -47,7 +47,7 @@ git stash clear 2>/dev/null || true
 git pull --ff-only origin dev
 
 log "Building image..."
-docker build --no-cache -t "${IMAGE_NAME}" .
+docker build -t "${IMAGE_NAME}" .
 
 log "Redeploying app container..."
 docker compose up -d complass-service
