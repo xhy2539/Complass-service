@@ -37,6 +37,7 @@ def _ensure_schema_updates() -> None:
     """补齐轻量字段迁移，避免已有开发库缺少新增列。"""
     _add_column_if_missing("risk_points", "replace_text", "TEXT")
     _add_column_if_missing("review_tasks", "rule_version_id", "VARCHAR(36)")
+    _add_column_if_missing("review_tasks", "file_path", "VARCHAR(500)")
     _add_column_if_missing("review_tasks", "rules_snapshot_json", "JSON")
     _add_column_if_missing(
         "review_tasks", "contract_type", "VARCHAR(50) NOT NULL DEFAULT '通用'"
@@ -51,6 +52,8 @@ def _ensure_schema_updates() -> None:
     _add_column_if_missing("risk_points", "rule_code", "VARCHAR(50)")
     _add_column_if_missing("risk_points", "rule_snapshot_json", "JSON")
     _add_column_if_missing("comparison_tasks", "rule_version_id", "VARCHAR(36)")
+    _add_column_if_missing("comparison_tasks", "old_file_path", "VARCHAR(500)")
+    _add_column_if_missing("comparison_tasks", "new_file_path", "VARCHAR(500)")
     _add_column_if_missing("comparison_tasks", "rules_snapshot_json", "JSON")
     _add_column_if_missing(
         "comparison_tasks", "contract_type", "VARCHAR(50) NOT NULL DEFAULT '通用'"
@@ -70,6 +73,10 @@ def _ensure_schema_updates() -> None:
     _add_column_if_missing("users", "token_used", "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing("review_tasks", "token_cost", "INTEGER")
     _add_column_if_missing("comparison_tasks", "token_cost", "INTEGER")
+    _add_column_if_missing("review_tasks", "use_coze", "BOOLEAN NOT NULL DEFAULT TRUE")
+    _add_column_if_missing(
+        "comparison_tasks", "enhance", "BOOLEAN NOT NULL DEFAULT TRUE"
+    )
 
 
 def _add_column_if_missing(table_name: str, column_name: str, ddl: str) -> None:

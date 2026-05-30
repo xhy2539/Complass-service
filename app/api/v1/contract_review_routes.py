@@ -1,5 +1,6 @@
 """单合同审查路由，提供文件上传、任务创建、解析和风险分析接口。"""
 
+import asyncio
 import logging
 import re
 import uuid
@@ -8,6 +9,7 @@ from typing import Annotated
 from typing import Optional
 
 from fastapi import APIRouter
+from fastapi import BackgroundTasks
 from fastapi import Depends
 from fastapi import File
 from fastapi import HTTPException
@@ -24,6 +26,7 @@ from app.models.database import RiskStatus
 from app.models.database import Sentence
 from app.models.database import TaskStatus
 from app.models.database import User
+from app.models.database_connection import SessionLocal
 from app.models.database_connection import get_db
 from app.schemas.review import ReviewExportRequest
 from app.schemas.review import ReviewRiskListResponse
@@ -34,10 +37,11 @@ from app.schemas.review import ReviewTaskSchema
 from app.schemas.review import RiskPointSchema
 from app.schemas.review import RiskStatsSchema
 from app.services.document_exporter import DocumentExporter
-from app.services.document_parser import DocumentParseError
 from app.services.document_parser import DocumentParser
 from app.services.sanitization_service import restore_text_from_mapping
 from app.services.sanitization_service import sanitize_contract_text
+from app.services.task_file_storage import read_task_upload
+from app.services.task_file_storage import save_task_upload
 
 logger = logging.getLogger(__name__)
 
@@ -328,18 +332,14 @@ def find_best_paragraph_match(
 
 @contract_review_router.post("/reviews", response_model=ReviewTaskCreateResponse)
 async def create_review_task(
+    background_tasks: BackgroundTasks,
     file: Annotated[UploadFile, File(description="合同文件，支持 docx/pdf/txt")],
     use_coze: bool = True,
     contract_type: str = "通用",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ReviewTaskCreateResponse:
-    """
-    创建单合同审查任务。
-
-    流程：上传文件 → 创建任务 → 解析 → Coze分析（如启用）→ 保存结果
-    返回 task_id 供后续查询。
-    """
+    """创建单合同审查任务并异步执行分析。"""
     validate_file(file)
 
     content = await file.read()
@@ -350,100 +350,174 @@ async def create_review_task(
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="文件大小超过 10MB 限制")
 
-    # 解析文档
-    try:
-        parse_result = DocumentParser.parse(content, file.filename)
-    except DocumentParseError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-    logger.info(
-        f"[Review] 文件解析完成: {file.filename}, 段落数={len(parse_result.paragraphs)}, 句子数={len(parse_result.sentences)}"
-    )
-
-    sanitization = sanitize_contract_text(parse_result.text)
-    if sanitization.errors:
-        raise HTTPException(status_code=422, detail="; ".join(sanitization.errors))
-
-    # 创建审查任务
     task_id = _uuid()
+    file_path = save_task_upload(
+        task_id, "review", file.filename or "contract", content
+    )
     task = ReviewTask(
         id=task_id,
         user_id=current_user.id,
-        file_name=parse_result.file_name,
-        file_type=parse_result.file_type,
+        file_name=file.filename or "unknown",
+        file_type=(
+            file.filename.rsplit(".", 1)[-1].lower()
+            if file.filename and "." in file.filename
+            else "unknown"
+        ),
+        file_path=file_path,
         file_size=len(content),
-        text=parse_result.text,
-        char_count=parse_result.char_count,
-        page_count=parse_result.page_count,
-        paragraph_count=len(parse_result.paragraphs),
-        sentence_count=len(parse_result.sentences),
-        sanitized_text=sanitization.sanitized_text,
-        sanitization_mapping_json=sanitization.mappings,
-        sanitization_status="completed",
+        sanitization_status="not_required",
         rule_version_id=None,
         rules_snapshot_json=[],
         contract_type=contract_type,
-        paragraphs_json=[p.__dict__ for p in parse_result.paragraphs],
-        sentences_json=parse_result.sentences,
-        position_info_json={
-            "paragraphs": [
-                {
-                    "index": p.index,
-                    "text": p.text,
-                    "char_offset_start": p.char_offset_start,
-                    "char_offset_end": p.char_offset_end,
-                    "page_number": p.page_number,
-                    "is_key_clause": p.is_key_clause,
-                }
-                for p in parse_result.paragraphs
-            ],
-            "sentences": parse_result.sentences,
-        },
-        comparison_data_json={
-            "sentences": parse_result.sentences,
-            "key_clauses": [p.text for p in parse_result.paragraphs if p.is_key_clause],
-        },
-        status=TaskStatus.PROCESSING,
+        use_coze=use_coze,
+        status=TaskStatus.PENDING,
     )
 
     db.add(task)
+    db.commit()
+    # 后台执行重任务，接口快速返回 task_id。
+    background_tasks.add_task(
+        _process_review_task_background,
+        task_id,
+        current_user.id,
+        file.filename or "unknown",
+        file_path,
+        use_coze,
+    )
 
-    # 创建段落记录
-    for p in parse_result.paragraphs:
-        paragraph = Paragraph(
-            id=_uuid(),
-            review_task_id=task_id,
-            index=p.index,
-            text=p.text,
-            char_offset_start=p.char_offset_start,
-            char_offset_end=p.char_offset_end,
-            page_number=p.page_number,
-            is_key_clause=p.is_key_clause,
-            paragraph_type=p.paragraph_type,
-            paragraph_level=p.paragraph_level,
+    return ReviewTaskCreateResponse(task_id=task_id, message="审查任务已提交")
+
+
+def _process_review_task_background(
+    task_id: str,
+    user_id: str,
+    file_name: str,
+    file_path: str,
+    use_coze: bool,
+) -> None:
+    """后台处理审查任务，独立管理数据库事务。"""
+    db = SessionLocal()
+    try:
+        asyncio.run(
+            _run_review_task_async(
+                db=db,
+                task_id=task_id,
+                user_id=user_id,
+                file_name=file_name,
+                file_path=file_path,
+                use_coze=use_coze,
+            )
         )
-        db.add(paragraph)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        task = db.query(ReviewTask).filter(ReviewTask.id == task_id).first()
+        if task:
+            task.status = TaskStatus.FAILED
+            task.completed_at = datetime.utcnow()
+            task.sanitization_error = str(e)
+            task.coze_message = f"任务失败: {e}"
+            db.commit()
+        logger.exception("[Review] 后台任务失败 task_id=%s", task_id)
+    finally:
+        db.close()
 
-    # 创建句子记录
-    sentences_info = {}
-    for idx, s in enumerate(parse_result.sentences):
-        sentence_id = _uuid()
-        sentence = Sentence(
-            id=sentence_id,
-            review_task_id=task_id,
-            index=idx,
-            text=s.get("text", ""),
-            char_offset_start=s.get("char_offset_start"),
-            char_offset_end=s.get("char_offset_end"),
-            paragraph_index=s.get("paragraph_index"),
-        )
-        db.add(sentence)
-        sentences_info[idx] = {"text": s.get("text", ""), "id": sentence_id}
 
-    # 立即 flush，确保句子写入数据库，获取真实 ID
+async def _run_review_task_async(
+    db: Session,
+    task_id: str,
+    user_id: str,
+    file_name: str,
+    file_path: str,
+    use_coze: bool,
+) -> None:
+    """后台执行审查任务主流程。"""
+    task = (
+        db.query(ReviewTask)
+        .filter(ReviewTask.id == task_id, ReviewTask.user_id == user_id)
+        .first()
+    )
+    current_user = db.query(User).filter(User.id == user_id).first()
+    if not task or not current_user:
+        raise RuntimeError("任务或用户不存在")
+
+    task.status = TaskStatus.PROCESSING
+    db.commit()
+    db.query(RiskPoint).filter(RiskPoint.review_task_id == task_id).delete()
+    db.query(Paragraph).filter(Paragraph.review_task_id == task_id).delete()
+    db.query(Sentence).filter(Sentence.review_task_id == task_id).delete()
     db.flush()
 
-    # 构建段落信息（用于风险点定位）
+    content = read_task_upload(file_path)
+    parse_result = DocumentParser.parse(content, file_name)
+    sanitization = sanitize_contract_text(parse_result.text)
+    if sanitization.errors:
+        raise RuntimeError("; ".join(sanitization.errors))
+
+    task.file_name = parse_result.file_name
+    task.file_type = parse_result.file_type
+    task.file_path = file_path
+    task.text = parse_result.text
+    task.char_count = parse_result.char_count
+    task.page_count = parse_result.page_count
+    task.paragraph_count = len(parse_result.paragraphs)
+    task.sentence_count = len(parse_result.sentences)
+    task.sanitized_text = sanitization.sanitized_text
+    task.sanitization_mapping_json = sanitization.mappings
+    task.sanitization_status = "completed"
+    task.paragraphs_json = [p.__dict__ for p in parse_result.paragraphs]
+    task.sentences_json = parse_result.sentences
+    task.position_info_json = {
+        "paragraphs": [
+            {
+                "index": p.index,
+                "text": p.text,
+                "char_offset_start": p.char_offset_start,
+                "char_offset_end": p.char_offset_end,
+                "page_number": p.page_number,
+                "is_key_clause": p.is_key_clause,
+            }
+            for p in parse_result.paragraphs
+        ],
+        "sentences": parse_result.sentences,
+    }
+    task.comparison_data_json = {
+        "sentences": parse_result.sentences,
+        "key_clauses": [p.text for p in parse_result.paragraphs if p.is_key_clause],
+    }
+
+    sentences_info = {}
+    for p in parse_result.paragraphs:
+        db.add(
+            Paragraph(
+                id=_uuid(),
+                review_task_id=task_id,
+                index=p.index,
+                text=p.text,
+                char_offset_start=p.char_offset_start,
+                char_offset_end=p.char_offset_end,
+                page_number=p.page_number,
+                is_key_clause=p.is_key_clause,
+                paragraph_type=p.paragraph_type,
+                paragraph_level=p.paragraph_level,
+            )
+        )
+    for idx, s in enumerate(parse_result.sentences):
+        sentence_id = _uuid()
+        db.add(
+            Sentence(
+                id=sentence_id,
+                review_task_id=task_id,
+                index=idx,
+                text=s.get("text", ""),
+                char_offset_start=s.get("char_offset_start"),
+                char_offset_end=s.get("char_offset_end"),
+                paragraph_index=s.get("paragraph_index"),
+            )
+        )
+        sentences_info[idx] = {"text": s.get("text", ""), "id": sentence_id}
+
+    db.flush()
     paragraphs_info = {
         p.index: {
             "text": p.text,
@@ -454,15 +528,12 @@ async def create_review_task(
         for p in parse_result.paragraphs
     }
 
-    # 如果启用 Coze，分析风险
     if use_coze:
         if (
             current_user.token_quota > 0
             and current_user.token_used >= current_user.token_quota
         ):
-            raise HTTPException(
-                status_code=402, detail="Token 配额已用完，请联系管理员升级"
-            )
+            raise RuntimeError("Token 配额已用完，请联系管理员升级")
 
         try:
             from app.services.coze_service import get_coze_service
@@ -471,8 +542,6 @@ async def create_review_task(
             coze_result, usage = await coze_service.review_contract_file(
                 sanitization.sanitized_text,
             )
-
-            # 更新任务结果
             task.overall_conclusion = coze_result.get("overall_conclusion", "")
             task.risk_summary = coze_result.get(
                 "risk_summary", {"high": 0, "medium": 0, "low": 0}
@@ -483,14 +552,8 @@ async def create_review_task(
             current_user.token_used = current_user.token_used + usage.get(
                 "token_count", 0
             )
-            task.status = TaskStatus.COMPLETED
-            task.completed_at = datetime.utcnow()
 
-            # 创建风险点记录
-            risk_points_data = coze_result.get("risk_points", [])
-            logger.info(f"[Review] Coze返回风险点数: {len(risk_points_data)}")
-
-            for rp_data in risk_points_data:
+            for rp_data in coze_result.get("risk_points", []):
                 rule_code = rp_data.get("rule_code") or rp_data.get("rule_id")
                 evidence = restore_text_from_mapping(
                     rp_data.get("evidence") or "", sanitization.mappings
@@ -501,51 +564,78 @@ async def create_review_task(
                 suggestion = restore_text_from_mapping(
                     rp_data.get("suggestion") or "", sanitization.mappings
                 )
-
-                # 使用改进的匹配算法定位风险点
-                position, original_text = find_best_paragraph_match(
+                position, _ = find_best_paragraph_match(
                     title=rp_data.get("title", ""),
                     reason=reason,
                     paragraphs_info=paragraphs_info,
                 )
-
-                # 查找最匹配的句子
                 matched_sentence = find_best_sentence_match(
                     evidence=evidence, sentences_info=sentences_info
                 )
-
-                risk_point = RiskPoint(
-                    id=_uuid(),
-                    review_task_id=task_id,
-                    title=rp_data.get("title", ""),
-                    level=RiskLevel(rp_data.get("level", "medium")),
-                    reason=reason,
-                    evidence=evidence,
-                    impact=restore_text_from_mapping(
-                        rp_data.get("impact") or "", sanitization.mappings
-                    ),
-                    suggestion=suggestion,
-                    replace_text=restore_text_from_mapping(
-                        rp_data.get("replace_text") or "", sanitization.mappings
-                    ),
-                    rule_code=rule_code,
-                    rule_snapshot_json=None,
-                    position=position,
-                    sentence_id=matched_sentence["id"] if matched_sentence else None,
-                    status=RiskStatus.PENDING,
-                    source="coze",
+                db.add(
+                    RiskPoint(
+                        id=_uuid(),
+                        review_task_id=task_id,
+                        title=rp_data.get("title", ""),
+                        level=RiskLevel(rp_data.get("level", "medium")),
+                        reason=reason,
+                        evidence=evidence,
+                        impact=restore_text_from_mapping(
+                            rp_data.get("impact") or "", sanitization.mappings
+                        ),
+                        suggestion=suggestion,
+                        replace_text=restore_text_from_mapping(
+                            rp_data.get("replace_text") or "", sanitization.mappings
+                        ),
+                        rule_code=rule_code,
+                        rule_snapshot_json=None,
+                        position=position,
+                        sentence_id=matched_sentence["id"]
+                        if matched_sentence
+                        else None,
+                        status=RiskStatus.PENDING,
+                        source="coze",
+                    )
                 )
-                db.add(risk_point)
-
         except Exception as e:
-            # Coze 调用失败，任务标记为完成但无 AI 结果
+            logger.error("[Review] Coze 分析失败 task_id=%s: %s", task_id, e)
             task.coze_message = f"AI 分析失败: {e}"
-            task.status = TaskStatus.COMPLETED
-            task.completed_at = datetime.utcnow()
 
-    db.commit()
+    task.status = TaskStatus.COMPLETED
+    task.completed_at = datetime.utcnow()
 
-    return ReviewTaskCreateResponse(task_id=task_id, message="审查任务创建成功")
+
+def recover_pending_review_tasks() -> int:
+    """恢复服务重启前未完成的审查任务。"""
+    db = SessionLocal()
+    recovered = 0
+    try:
+        tasks = (
+            db.query(ReviewTask)
+            .filter(ReviewTask.status.in_([TaskStatus.PENDING, TaskStatus.PROCESSING]))
+            .all()
+        )
+        for task in tasks:
+            if not task.file_path:
+                task.status = TaskStatus.FAILED
+                task.completed_at = datetime.utcnow()
+                task.sanitization_error = "任务文件路径为空，无法恢复"
+                continue
+            asyncio.create_task(
+                asyncio.to_thread(
+                    _process_review_task_background,
+                    task.id,
+                    task.user_id,
+                    task.file_name,
+                    task.file_path,
+                    bool(task.use_coze),
+                )
+            )
+            recovered += 1
+        db.commit()
+    finally:
+        db.close()
+    return recovered
 
 
 @contract_review_router.get(

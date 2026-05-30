@@ -1,5 +1,6 @@
 """合同版本比对路由，支持双文件上传、任务创建、diff 计算和 Coze 语义增强。"""
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime
@@ -7,6 +8,7 @@ from typing import Annotated
 from typing import Optional
 
 from fastapi import APIRouter
+from fastapi import BackgroundTasks
 from fastapi import Depends
 from fastapi import File
 from fastapi import HTTPException
@@ -22,6 +24,7 @@ from app.models.database import ComparisonTask
 from app.models.database import RiskLevel
 from app.models.database import TaskStatus
 from app.models.database import User
+from app.models.database_connection import SessionLocal
 from app.models.database_connection import get_db
 from app.schemas.comparison import ComparisonRiskPointSchema
 from app.schemas.comparison import ComparisonTaskSchema
@@ -29,13 +32,14 @@ from app.schemas.review import ComparisonRiskListResponse
 from app.schemas.review import ComparisonTaskListResponse
 from app.schemas.review import RiskStatsSchema
 from app.services.coze_service import get_coze_service
-from app.services.document_parser import DocumentParseError
 from app.services.document_parser import DocumentParser
 from app.services.rule_service import build_enabled_rules_snapshot
 from app.services.rule_service import find_rule_snapshot
 from app.services.sanitization_service import apply_sanitization_mappings
 from app.services.sanitization_service import restore_text_from_mapping
 from app.services.sanitization_service import sanitize_contract_text
+from app.services.task_file_storage import read_task_upload
+from app.services.task_file_storage import save_task_upload
 from app.services.text_diff import sentence_diff_with_positions
 from app.services.text_diff import summarize_diff
 
@@ -65,6 +69,7 @@ def validate_file(file: UploadFile) -> None:
 
 @contract_comparison_router.post("/comparisons", response_model=dict)
 async def create_comparison_task(
+    background_tasks: BackgroundTasks,
     old_file: Annotated[UploadFile, File(description="旧版本合同")],
     new_file: Annotated[UploadFile, File(description="新版本合同")],
     enhance: bool = True,
@@ -72,13 +77,7 @@ async def create_comparison_task(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """
-    创建版本比对任务。
-
-    流程：上传两个文件 → 创建任务 → 解析 → 创建文档和句子记录 → diff → Coze增强（如启用）→ 保存结果
-    返回 task_id 供后续查询。
-    """
-    # 验证文件
+    """创建版本比对任务并异步执行处理。"""
     validate_file(old_file)
     validate_file(new_file)
 
@@ -94,137 +93,245 @@ async def create_comparison_task(
     if len(old_content) > MAX_FILE_SIZE or len(new_content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="文件大小超过 10MB 限制")
 
-    # 解析文档
-    try:
-        old_doc = DocumentParser.parse(old_content, old_file.filename)
-        new_doc = DocumentParser.parse(new_content, new_file.filename)
-    except DocumentParseError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    task_id = _uuid()
+    old_file_path = save_task_upload(
+        task_id, "old", old_file.filename or "old_contract", old_content
+    )
+    new_file_path = save_task_upload(
+        task_id, "new", new_file.filename or "new_contract", new_content
+    )
+    task = ComparisonTask(
+        id=task_id,
+        user_id=current_user.id,
+        old_file_name=old_file.filename or "unknown",
+        new_file_name=new_file.filename or "unknown",
+        old_file_type=(
+            old_file.filename.rsplit(".", 1)[-1].lower()
+            if old_file.filename and "." in old_file.filename
+            else "unknown"
+        ),
+        new_file_type=(
+            new_file.filename.rsplit(".", 1)[-1].lower()
+            if new_file.filename and "." in new_file.filename
+            else "unknown"
+        ),
+        old_file_size=len(old_content),
+        new_file_size=len(new_content),
+        old_file_path=old_file_path,
+        new_file_path=new_file_path,
+        sanitization_status="not_required",
+        rules_snapshot_json=[],
+        contract_type=contract_type,
+        enhance=enhance,
+        status=TaskStatus.PENDING,
+    )
 
+    db.add(task)
+    db.commit()
+    background_tasks.add_task(
+        _process_comparison_task_background,
+        task_id,
+        current_user.id,
+        old_file.filename or "unknown",
+        new_file.filename or "unknown",
+        old_file_path,
+        new_file_path,
+        enhance,
+        contract_type,
+    )
+
+    return {
+        "success": True,
+        "task_id": task_id,
+        "message": "版本比对任务已提交",
+    }
+
+
+def _process_comparison_task_background(
+    task_id: str,
+    user_id: str,
+    old_file_name: str,
+    new_file_name: str,
+    old_file_path: str,
+    new_file_path: str,
+    enhance: bool,
+    contract_type: str,
+) -> None:
+    """后台处理比对任务，独立管理事务。"""
+    db = SessionLocal()
+    try:
+        asyncio.run(
+            _run_comparison_task_async(
+                db=db,
+                task_id=task_id,
+                user_id=user_id,
+                old_file_name=old_file_name,
+                new_file_name=new_file_name,
+                old_file_path=old_file_path,
+                new_file_path=new_file_path,
+                enhance=enhance,
+                contract_type=contract_type,
+            )
+        )
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        task = db.query(ComparisonTask).filter(ComparisonTask.id == task_id).first()
+        if task:
+            task.status = TaskStatus.FAILED
+            task.completed_at = datetime.utcnow()
+            task.sanitization_error = str(e)
+            db.commit()
+        logger.exception("[Comparison] 后台任务失败 task_id=%s", task_id)
+    finally:
+        db.close()
+
+
+async def _run_comparison_task_async(
+    db: Session,
+    task_id: str,
+    user_id: str,
+    old_file_name: str,
+    new_file_name: str,
+    old_file_path: str,
+    new_file_path: str,
+    enhance: bool,
+    contract_type: str,
+) -> None:
+    """后台执行比对任务主流程。"""
+    task = (
+        db.query(ComparisonTask)
+        .filter(ComparisonTask.id == task_id, ComparisonTask.user_id == user_id)
+        .first()
+    )
+    current_user = db.query(User).filter(User.id == user_id).first()
+    if not task or not current_user:
+        raise RuntimeError("任务或用户不存在")
+    task.status = TaskStatus.PROCESSING
+    db.commit()
+
+    old_content = read_task_upload(old_file_path)
+    new_content = read_task_upload(new_file_path)
+    old_doc = DocumentParser.parse(old_content, old_file_name)
+    new_doc = DocumentParser.parse(new_content, new_file_name)
     old_sanitization = sanitize_contract_text(old_doc.text)
     new_sanitization = sanitize_contract_text(new_doc.text)
     sanitization_errors = old_sanitization.errors + new_sanitization.errors
     if sanitization_errors:
-        raise HTTPException(status_code=422, detail="; ".join(sanitization_errors))
+        raise RuntimeError("; ".join(sanitization_errors))
 
     rule_version = None
     rules_snapshot: list[dict] = []
     if enhance:
-        try:
-            rule_version, rules_snapshot = build_enabled_rules_snapshot(
-                db, contract_type
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        rule_version, rules_snapshot = build_enabled_rules_snapshot(db, contract_type)
         if not rules_snapshot:
-            raise HTTPException(
-                status_code=400, detail="当前合同类型没有可用的启用规则"
-            )
+            raise RuntimeError("当前合同类型没有可用的启用规则")
 
-    # 创建比对任务
-    task_id = _uuid()
-    task = ComparisonTask(
-        id=task_id,
-        user_id=current_user.id,
-        old_file_name=old_doc.file_name,
-        new_file_name=new_doc.file_name,
-        old_file_type=old_doc.file_type,
-        new_file_type=new_doc.file_type,
-        old_file_size=len(old_content),
-        new_file_size=len(new_content),
-        old_char_count=old_doc.char_count,
-        new_char_count=new_doc.char_count,
-        old_page_count=old_doc.page_count,
-        new_page_count=new_doc.page_count,
-        old_paragraph_count=len(old_doc.paragraphs),
-        new_paragraph_count=len(new_doc.paragraphs),
-        old_text=old_doc.text,
-        new_text=new_doc.text,
-        old_sanitized_text=old_sanitization.sanitized_text,
-        new_sanitized_text=new_sanitization.sanitized_text,
-        old_sanitization_mapping_json=old_sanitization.mappings,
-        new_sanitization_mapping_json=new_sanitization.mappings,
-        sanitization_status="completed",
-        rule_version_id=rule_version.id if rule_version else None,
-        rules_snapshot_json=rules_snapshot,
-        contract_type=contract_type,
-        status=TaskStatus.PROCESSING,
-    )
-
-    db.add(task)
-
-    # 创建旧合同文档记录
-    old_doc_id = _uuid()
-    old_document = ComparisonDocument(
-        id=old_doc_id,
-        comparison_task_id=task_id,
-        version=ComparisonDocVersion.OLD,
-        file_name=old_doc.file_name,
-        file_type=old_doc.file_type,
-        file_size=len(old_content),
-        text=old_doc.text,
-        char_count=old_doc.char_count,
-        page_count=old_doc.page_count,
-        paragraph_count=len(old_doc.paragraphs),
-        sentence_count=len(old_doc.sentences),
-        sanitized_text=old_sanitization.sanitized_text,
-    )
-    db.add(old_document)
-
-    # 创建新合同文档记录
-    new_doc_id = _uuid()
-    new_document = ComparisonDocument(
-        id=new_doc_id,
-        comparison_task_id=task_id,
-        version=ComparisonDocVersion.NEW,
-        file_name=new_doc.file_name,
-        file_type=new_doc.file_type,
-        file_size=len(new_content),
-        text=new_doc.text,
-        char_count=new_doc.char_count,
-        page_count=new_doc.page_count,
-        paragraph_count=len(new_doc.paragraphs),
-        sentence_count=len(new_doc.sentences),
-        sanitized_text=new_sanitization.sanitized_text,
-    )
-    db.add(new_document)
-
-    # 创建旧合同句子记录
-    old_sentences_info = {}
-    for idx, s in enumerate(old_doc.sentences):
-        sentence_id = _uuid()
-        sentence = ComparisonSentence(
-            id=sentence_id,
-            comparison_document_id=old_doc_id,
-            index=idx,
-            text=s.get("text", ""),
-            char_offset_start=s.get("char_offset_start"),
-            char_offset_end=s.get("char_offset_end"),
-            paragraph_index=s.get("paragraph_index"),
-        )
-        db.add(sentence)
-        old_sentences_info[idx] = {"id": sentence_id, "text": s.get("text", "")}
-
-    # 创建新合同句子记录
-    new_sentences_info = {}
-    for idx, s in enumerate(new_doc.sentences):
-        sentence_id = _uuid()
-        sentence = ComparisonSentence(
-            id=sentence_id,
-            comparison_document_id=new_doc_id,
-            index=idx,
-            text=s.get("text", ""),
-            char_offset_start=s.get("char_offset_start"),
-            char_offset_end=s.get("char_offset_end"),
-            paragraph_index=s.get("paragraph_index"),
-        )
-        db.add(sentence)
-        new_sentences_info[idx] = {"id": sentence_id, "text": s.get("text", "")}
-
-    # 立即 flush，确保句子写入数据库，获取真实 ID
+    db.query(ComparisonRiskPoint).filter(
+        ComparisonRiskPoint.comparison_task_id == task_id
+    ).delete()
+    for doc in (
+        db.query(ComparisonDocument)
+        .filter(ComparisonDocument.comparison_task_id == task_id)
+        .all()
+    ):
+        db.query(ComparisonSentence).filter(
+            ComparisonSentence.comparison_document_id == doc.id
+        ).delete()
+    db.query(ComparisonDocument).filter(
+        ComparisonDocument.comparison_task_id == task_id
+    ).delete()
     db.flush()
 
-    # 构建用于 diff 比对的句子数据
+    task.old_file_name = old_doc.file_name
+    task.new_file_name = new_doc.file_name
+    task.old_file_type = old_doc.file_type
+    task.new_file_type = new_doc.file_type
+    task.old_file_path = old_file_path
+    task.new_file_path = new_file_path
+    task.old_char_count = old_doc.char_count
+    task.new_char_count = new_doc.char_count
+    task.old_page_count = old_doc.page_count
+    task.new_page_count = new_doc.page_count
+    task.old_paragraph_count = len(old_doc.paragraphs)
+    task.new_paragraph_count = len(new_doc.paragraphs)
+    task.old_text = old_doc.text
+    task.new_text = new_doc.text
+    task.old_sanitized_text = old_sanitization.sanitized_text
+    task.new_sanitized_text = new_sanitization.sanitized_text
+    task.old_sanitization_mapping_json = old_sanitization.mappings
+    task.new_sanitization_mapping_json = new_sanitization.mappings
+    task.sanitization_status = "completed"
+    task.rule_version_id = rule_version.id if rule_version else None
+    task.rules_snapshot_json = rules_snapshot
+
+    old_doc_id = _uuid()
+    new_doc_id = _uuid()
+    db.add(
+        ComparisonDocument(
+            id=old_doc_id,
+            comparison_task_id=task_id,
+            version=ComparisonDocVersion.OLD,
+            file_name=old_doc.file_name,
+            file_type=old_doc.file_type,
+            file_size=len(old_content),
+            text=old_doc.text,
+            char_count=old_doc.char_count,
+            page_count=old_doc.page_count,
+            paragraph_count=len(old_doc.paragraphs),
+            sentence_count=len(old_doc.sentences),
+            sanitized_text=old_sanitization.sanitized_text,
+        )
+    )
+    db.add(
+        ComparisonDocument(
+            id=new_doc_id,
+            comparison_task_id=task_id,
+            version=ComparisonDocVersion.NEW,
+            file_name=new_doc.file_name,
+            file_type=new_doc.file_type,
+            file_size=len(new_content),
+            text=new_doc.text,
+            char_count=new_doc.char_count,
+            page_count=new_doc.page_count,
+            paragraph_count=len(new_doc.paragraphs),
+            sentence_count=len(new_doc.sentences),
+            sanitized_text=new_sanitization.sanitized_text,
+        )
+    )
+
+    old_sentences_info = {}
+    new_sentences_info = {}
+    for idx, s in enumerate(old_doc.sentences):
+        sentence_id = _uuid()
+        db.add(
+            ComparisonSentence(
+                id=sentence_id,
+                comparison_document_id=old_doc_id,
+                index=idx,
+                text=s.get("text", ""),
+                char_offset_start=s.get("char_offset_start"),
+                char_offset_end=s.get("char_offset_end"),
+                paragraph_index=s.get("paragraph_index"),
+            )
+        )
+        old_sentences_info[idx] = {"id": sentence_id, "text": s.get("text", "")}
+    for idx, s in enumerate(new_doc.sentences):
+        sentence_id = _uuid()
+        db.add(
+            ComparisonSentence(
+                id=sentence_id,
+                comparison_document_id=new_doc_id,
+                index=idx,
+                text=s.get("text", ""),
+                char_offset_start=s.get("char_offset_start"),
+                char_offset_end=s.get("char_offset_end"),
+                paragraph_index=s.get("paragraph_index"),
+            )
+        )
+        new_sentences_info[idx] = {"id": sentence_id, "text": s.get("text", "")}
+    db.flush()
+
     old_comparison_data = {
         "sentences": [
             {
@@ -238,7 +345,6 @@ async def create_comparison_task(
         ],
         "key_clauses": [p for p in old_doc.paragraphs if p.is_key_clause],
     }
-
     new_comparison_data = {
         "sentences": [
             {
@@ -252,37 +358,8 @@ async def create_comparison_task(
         ],
         "key_clauses": [p for p in new_doc.paragraphs if p.is_key_clause],
     }
-
-    # 使用带位置的句子级 diff
     diffs = sentence_diff_with_positions(old_comparison_data, new_comparison_data)
     summary = summarize_diff(diffs)
-
-    # 构建 Coze 新版格式的 diff_texts（脱敏后）
-    diff_texts = []
-    for d in diffs:
-        if d.change_type == "modified":
-            old_text = apply_sanitization_mappings(
-                d.old_text or "", old_sanitization.mappings
-            )
-            new_text = apply_sanitization_mappings(
-                d.new_text or "", new_sanitization.mappings
-            )
-            content = f"修改内容：{old_text} → {new_text}"
-        elif d.change_type == "added":
-            new_text = apply_sanitization_mappings(
-                d.new_text or "", new_sanitization.mappings
-            )
-            content = f"新增内容：{new_text}"
-        elif d.change_type == "deleted":
-            old_text = apply_sanitization_mappings(
-                d.old_text or "", old_sanitization.mappings
-            )
-            content = f"删除内容：{old_text}"
-        else:
-            continue
-        diff_texts.append({"type": d.change_type, "content": content})
-
-    # 保存 diff 结果
     task.diff_stats = {
         "total": summary["total"],
         "added": summary["added"],
@@ -326,17 +403,31 @@ async def create_comparison_task(
         ],
     }
 
-    # Coze 语义增强
     if enhance:
         if (
             current_user.token_quota > 0
             and current_user.token_used >= current_user.token_quota
         ):
-            raise HTTPException(
-                status_code=402, detail="Token 配额已用完，请联系管理员升级"
-            )
-
+            raise RuntimeError("Token 配额已用完，请联系管理员升级")
         try:
+            diff_texts = []
+            for d in diffs:
+                if d.change_type == "modified":
+                    old_text = apply_sanitization_mappings(
+                        d.old_text or "", old_sanitization.mappings
+                    )
+                    new_text = apply_sanitization_mappings(
+                        d.new_text or "", new_sanitization.mappings
+                    )
+                    content = f"修改内容：{old_text} → {new_text}"
+                elif d.change_type == "added":
+                    content = f"新增内容：{apply_sanitization_mappings(d.new_text or '', new_sanitization.mappings)}"
+                elif d.change_type == "deleted":
+                    content = f"删除内容：{apply_sanitization_mappings(d.old_text or '', old_sanitization.mappings)}"
+                else:
+                    continue
+                diff_texts.append({"type": d.change_type, "content": content})
+
             coze_service = get_coze_service()
             coze_result, usage = await coze_service.enhance_diff_result(
                 {
@@ -349,7 +440,6 @@ async def create_comparison_task(
                     "contract_type": contract_type,
                 }
             )
-
             task.coze_enhanced = coze_result.get("enhanced", [])
             task.total_risks = coze_result.get("total_risks", 0)
             task.token_cost = usage.get("token_count", 0)
@@ -365,129 +455,121 @@ async def create_comparison_task(
                     "modified": coze_stats.get("modified", 0),
                 }
 
-            # 创建比对风险点
             for enhanced in coze_result.get("enhanced", []):
                 rule_code = enhanced.get("rule_code") or enhanced.get("rule_id")
-                # Coze 返回字段: category, change_type, evidence, impact,
-                #               new_quote, old_quote, original, risk_level, suggestion, summary
-                # 找到对应的 diff 项（通过 new_quote/old_quote 匹配）
                 diff_item = None
                 coze_old_quote = enhanced.get("old_quote", "")
                 coze_new_quote = enhanced.get("new_quote", "")
-
                 for d in diffs:
-                    if d.change_type == enhanced.get("change_type"):
-                        # 用 Coze 的 old_quote/new_quote 匹配 diff 的文本
-                        if coze_old_quote and coze_old_quote in (d.old_text or ""):
-                            diff_item = d
-                            break
-                        if coze_new_quote and coze_new_quote in (d.new_text or ""):
-                            diff_item = d
-                            break
-                        if enhanced.get("original") and (
-                            enhanced.get("original") in (d.old_text or "")
-                            or enhanced.get("original") in (d.new_text or "")
-                        ):
-                            diff_item = d
-                            break
-
-                # 根据 diff 类型确定 sentence 外键
+                    if d.change_type != enhanced.get("change_type"):
+                        continue
+                    if coze_old_quote and coze_old_quote in (d.old_text or ""):
+                        diff_item = d
+                        break
+                    if coze_new_quote and coze_new_quote in (d.new_text or ""):
+                        diff_item = d
+                        break
+                    if enhanced.get("original") and (
+                        enhanced.get("original") in (d.old_text or "")
+                        or enhanced.get("original") in (d.new_text or "")
+                    ):
+                        diff_item = d
+                        break
                 change_type = enhanced.get("change_type", "modified")
                 old_sentence_id = None
                 new_sentence_id = None
+                if diff_item and change_type in ("deleted", "modified"):
+                    for info in old_sentences_info.values():
+                        if info["text"] == diff_item.old_text:
+                            old_sentence_id = info["id"]
+                            break
+                if diff_item and change_type in ("added", "modified"):
+                    for info in new_sentences_info.values():
+                        if info["text"] == diff_item.new_text:
+                            new_sentence_id = info["id"]
+                            break
 
-                if diff_item:
-                    if change_type == "deleted":
-                        # deleted: 只有旧合同有句子
-                        for idx, info in old_sentences_info.items():
-                            if info["text"] == diff_item.old_text:
-                                old_sentence_id = info["id"]
-                                break
-                    elif change_type == "added":
-                        # added: 只有新合同有句子
-                        for idx, info in new_sentences_info.items():
-                            if info["text"] == diff_item.new_text:
-                                new_sentence_id = info["id"]
-                                break
-                    else:
-                        # modified: 旧新都有
-                        if diff_item.old_text:
-                            for idx, info in old_sentences_info.items():
-                                if info["text"] == diff_item.old_text:
-                                    old_sentence_id = info["id"]
-                                    break
-                        if diff_item.new_text:
-                            for idx, info in new_sentences_info.items():
-                                if info["text"] == diff_item.new_text:
-                                    new_sentence_id = info["id"]
-                                    break
-
-                risk_point = ComparisonRiskPoint(
-                    id=_uuid(),
-                    comparison_task_id=task_id,
-                    change_type=change_type,
-                    # 优先用 diff_item 的文本，其次用 Coze 的 old_quote/new_quote
-                    old_text=diff_item.old_text if diff_item else coze_old_quote,
-                    new_text=diff_item.new_text
-                    if diff_item
-                    else coze_new_quote or enhanced.get("original", ""),
-                    similarity=int(diff_item.similarity * 100) if diff_item else 0,
-                    summary=restore_text_from_mapping(
-                        enhanced.get("summary") or "", new_sanitization.mappings
-                    ),
-                    risk_level=RiskLevel(enhanced.get("risk_level", "low")),
-                    rule_code=rule_code,
-                    rule_snapshot_json=find_rule_snapshot(rules_snapshot, rule_code),
-                    category=enhanced.get("category"),
-                    evidence=restore_text_from_mapping(
-                        enhanced.get("evidence") or "",
-                        old_sanitization.mappings + new_sanitization.mappings,
-                    ),
-                    impact=restore_text_from_mapping(
-                        enhanced.get("impact") or "", new_sanitization.mappings
-                    ),
-                    suggestion=restore_text_from_mapping(
-                        enhanced.get("suggestion") or "", new_sanitization.mappings
-                    ),
-                    old_position=diff_item.old_position if diff_item else None,
-                    new_position=diff_item.new_position if diff_item else None,
-                    old_sentence_id=old_sentence_id,
-                    new_sentence_id=new_sentence_id,
-                    source="coze",
+                db.add(
+                    ComparisonRiskPoint(
+                        id=_uuid(),
+                        comparison_task_id=task_id,
+                        change_type=change_type,
+                        old_text=diff_item.old_text if diff_item else coze_old_quote,
+                        new_text=diff_item.new_text
+                        if diff_item
+                        else coze_new_quote or enhanced.get("original", ""),
+                        similarity=int(diff_item.similarity * 100) if diff_item else 0,
+                        summary=restore_text_from_mapping(
+                            enhanced.get("summary") or "", new_sanitization.mappings
+                        ),
+                        risk_level=RiskLevel(enhanced.get("risk_level", "low")),
+                        rule_code=rule_code,
+                        rule_snapshot_json=find_rule_snapshot(
+                            rules_snapshot, rule_code
+                        ),
+                        category=enhanced.get("category"),
+                        evidence=restore_text_from_mapping(
+                            enhanced.get("evidence") or "",
+                            old_sanitization.mappings + new_sanitization.mappings,
+                        ),
+                        impact=restore_text_from_mapping(
+                            enhanced.get("impact") or "", new_sanitization.mappings
+                        ),
+                        suggestion=restore_text_from_mapping(
+                            enhanced.get("suggestion") or "", new_sanitization.mappings
+                        ),
+                        old_position=diff_item.old_position if diff_item else None,
+                        new_position=diff_item.new_position if diff_item else None,
+                        old_sentence_id=old_sentence_id,
+                        new_sentence_id=new_sentence_id,
+                        source="coze",
+                    )
                 )
-                db.add(risk_point)
-
         except Exception as e:
-            logger.error(f"[Comparison] Coze 增强失败: {type(e).__name__}: {e}")
+            logger.error("[Comparison] Coze 增强失败 task_id=%s: %s", task_id, e)
             task.coze_enhanced = []
             task.total_risks = 0
 
     task.status = TaskStatus.COMPLETED
     task.completed_at = datetime.utcnow()
-    db.commit()
 
-    return {
-        "success": True,
-        "task_id": task_id,
-        "message": "版本比对任务创建成功",
-        "old_file": {
-            "name": old_doc.file_name,
-            "type": old_doc.file_type,
-            "char_count": old_doc.char_count,
-            "page_count": old_doc.page_count,
-            "paragraph_count": len(old_doc.paragraphs),
-            "sentence_count": len(old_doc.sentences),
-        },
-        "new_file": {
-            "name": new_doc.file_name,
-            "type": new_doc.file_type,
-            "char_count": new_doc.char_count,
-            "page_count": new_doc.page_count,
-            "paragraph_count": len(new_doc.paragraphs),
-            "sentence_count": len(new_doc.sentences),
-        },
-        "diff_stats": task.diff_stats,
-    }
+
+def recover_pending_comparison_tasks() -> int:
+    """恢复服务重启前未完成的比对任务。"""
+    db = SessionLocal()
+    recovered = 0
+    try:
+        tasks = (
+            db.query(ComparisonTask)
+            .filter(
+                ComparisonTask.status.in_([TaskStatus.PENDING, TaskStatus.PROCESSING])
+            )
+            .all()
+        )
+        for task in tasks:
+            if not task.old_file_path or not task.new_file_path:
+                task.status = TaskStatus.FAILED
+                task.completed_at = datetime.utcnow()
+                task.sanitization_error = "任务文件路径为空，无法恢复"
+                continue
+            asyncio.create_task(
+                asyncio.to_thread(
+                    _process_comparison_task_background,
+                    task.id,
+                    task.user_id,
+                    task.old_file_name,
+                    task.new_file_name,
+                    task.old_file_path,
+                    task.new_file_path,
+                    bool(task.enhance),
+                    task.contract_type,
+                )
+            )
+            recovered += 1
+        db.commit()
+    finally:
+        db.close()
+    return recovered
 
 
 @contract_comparison_router.get("/comparisons/{task_id}")
