@@ -13,6 +13,7 @@
 7. [通用错误码](#7-通用错误码)
 8. [规则库管理](#8-规则库管理)
 9. [优化合同版本与脱敏说明](#9-优化合同版本与脱敏说明)
+10. [飞书 IM 机器人](#10-飞书-im-机器人)
 
 ---
 
@@ -821,3 +822,96 @@ POST /api/v1/reviews/{task_id}/optimized-versions/{version_id}/export
 ```
 
 导出的文件只包含优化后的合同正文，不包含风险报告、批注和风险列表。
+
+---
+
+## 10. 飞书 IM 机器人
+
+通过飞书机器人发送合同文件，在线审查/比对，完成后返回前端工作台链接。
+
+### 10.1 配置
+
+在 `.env` 中配置：
+
+```bash
+FEISHU_APP_ID=xxx
+FEISHU_APP_SECRET=xxx
+FEISHU_VERIFICATION_TOKEN=xxx
+```
+
+飞书开放平台配置事件回调 URL：
+
+```
+http://82.156.132.43:8080/api/v1/feishu/event
+```
+
+订阅事件：`im.message.receive_v1`、`card.action.trigger`
+
+### 10.2 流程
+
+```
+用户发文件 → 飞书回调 → 后端下载 → Redis 存会话
+    → 回复卡片 [审查] [比对]
+        ├─ 审查 → 创建 ReviewTask → 回复链接 → 清除会话
+        └─ 比对 → 等第二文件 → 发文件 → 创建 ComparisonTask → 回复链接
+```
+
+### 10.3 链接格式
+
+```
+审查：http://82.156.132.43/?task_id=xxx&view=review
+比对：http://82.156.132.43/?task_id=xxx&view=comparison
+```
+
+### 10.4 Redis 会话结构
+
+```json
+{
+  "session_id": "uuid",
+  "platform": "feishu",
+  "feishu_open_id": "ou_xxx",
+  "user_id": "系统用户ID 或 null",
+  "chat_id": "oc_xxx",
+  "status": "waiting_for_action | waiting_for_second_file | processing | failed",
+  "files": [
+    {
+      "role": "first | second",
+      "file_name": "合同.docx",
+      "content_type": "MIME类型",
+      "file_path": "/tmp/complass-im/{sid}/file.docx",
+      "source_file_key": "飞书文件key"
+    }
+  ],
+  "created_at": "ISO8601",
+  "expires_at": "ISO8601"
+}
+```
+
+### 10.5 用户绑定
+
+飞书用户首次使用后，管理员在 `feishu_users` 表中手动关联系统用户：
+
+```sql
+INSERT INTO feishu_users (id, user_id, feishu_open_id)
+VALUES (UUID(), '系统user_id', '飞书open_id');
+```
+
+未绑定时创建的任务 `user_id` 为 null。
+
+### 10.6 前端对接
+
+前端需支持 URL 参数直接跳转到任务详情页：
+
+| 参数 | 说明 |
+|---|---|
+| `task_id` | 审查/比对任务 ID |
+| `view` | `review` 或 `comparison` |
+
+收到 `task_id` 后调用对应的详情接口：
+
+```
+GET /api/v1/reviews/{task_id}
+GET /api/v1/comparisons/{task_id}
+```
+
+如果任务状态为 `pending`，前端需展示"处理中"并定期轮询。
