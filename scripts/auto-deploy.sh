@@ -53,7 +53,8 @@ log "Redeploying app container..."
 docker compose up -d complass-service
 
 log "Waiting for service to become healthy..."
-if curl -fsS --max-time 10 --retry 5 --retry-delay 3 "${HEALTH_URL}"; then
+sleep 5
+if curl -fsS --max-time 10 --retry 10 --retry-delay 3 "${HEALTH_URL}"; then
     echo
     log "Deploy succeeded."
     docker compose ps
