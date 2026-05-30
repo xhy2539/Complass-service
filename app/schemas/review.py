@@ -57,6 +57,7 @@ class RiskPointSchema(BaseModel):
     evidence: Optional[str] = None  # 证据材料
     impact: Optional[str] = None  # 影响程度
     replace_text: Optional[str] = None  # Coze 返回的可替换修改文本
+    action_type: str = "manual"  # replace | insert | append | manual
     rule_code: Optional[str] = None  # 命中的规则编号
     rule_snapshot_json: Optional[dict] = None  # 任务执行时的规则快照
     # 位置和原文

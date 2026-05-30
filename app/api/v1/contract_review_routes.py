@@ -589,6 +589,7 @@ async def _run_review_task_async(
                         ),
                         rule_code=rule_code,
                         rule_snapshot_json=None,
+                        action_type=rp_data.get("action_type", "manual"),
                         position=position,
                         sentence_id=matched_sentence["id"]
                         if matched_sentence

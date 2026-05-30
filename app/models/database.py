@@ -425,6 +425,7 @@ class RiskPoint(Base):
 
     # Coze 建议替换文本
     replace_text = Column(Text, nullable=True)
+    action_type = Column(String(20), nullable=False, default="manual")
     rule_code = Column(String(50), nullable=True, index=True)
     rule_snapshot_json = Column(JSON, nullable=True)
 
@@ -476,6 +477,7 @@ class RiskPoint(Base):
             "evidence": self.evidence,
             "impact": self.impact,
             "replace_text": self.replace_text,
+            "action_type": self.action_type,
             "rule_code": self.rule_code,
             "rule_snapshot_json": self.rule_snapshot_json,
             "position": self.position,
