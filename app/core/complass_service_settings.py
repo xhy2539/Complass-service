@@ -38,13 +38,7 @@ class ComplassServiceSettings(BaseSettings):
     redis_port: int = 6379
     redis_db: int = 0
 
-    # 飞书
-    feishu_app_id: str = ""
-    feishu_app_secret: str = ""
-    feishu_verification_token: str = ""
-    feishu_encrypt_key: str = ""
-
-    # 前端地址（飞书卡片结果链接）
+    # 前端地址
     frontend_base_url: str = "http://82.156.132.43"
 
     # JWT 配置
