@@ -25,6 +25,7 @@ DROP TABLE IF EXISTS `users`;
 CREATE TABLE `users` (
   `id` varchar(36) NOT NULL,
   `email` varchar(255) NOT NULL,
+  `phone` varchar(20) NOT NULL DEFAULT '',
   `nickname` varchar(100) NOT NULL,
   `hashed_password` varchar(255) NOT NULL,
   `is_active` tinyint(1) NOT NULL,
