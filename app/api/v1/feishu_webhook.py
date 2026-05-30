@@ -237,6 +237,10 @@ async def _do_review(
     session: dict, chat_id: str, db: Session, svc: IMSessionService
 ) -> dict[str, Any]:
     """创建审查任务并回复链接。"""
+    if not session.get("user_id"):
+        await send_text_message(chat_id, "请先在系统中绑定飞书账号后再使用审查功能。")
+        return {"code": 0}
+
     file_a = session["files"][0]
     file_path = file_a["file_path"]
     file_name = file_a["file_name"]
@@ -286,6 +290,10 @@ async def _do_compare(
     session: dict, chat_id: str, db: Session, svc: IMSessionService
 ) -> dict[str, Any]:
     """处理比对请求——单文件则提示发第二个，双文件则创建任务。"""
+    if not session.get("user_id"):
+        await send_text_message(chat_id, "请先在系统中绑定飞书账号后再使用比对功能。")
+        return {"code": 0}
+
     files = session["files"]
 
     if len(files) < 2:
