@@ -67,17 +67,6 @@ class User(Base):
         }
 
 
-class FeishuUser(Base):
-    """飞书用户绑定表，关联系统用户与飞书 open_id。"""
-
-    __tablename__ = "feishu_users"
-
-    id = Column(String(36), primary_key=True)
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    feishu_open_id = Column(String(64), unique=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-
 class TaskStatus(str, Enum):
     """任务状态枚举。"""
 
