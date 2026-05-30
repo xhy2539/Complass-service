@@ -249,6 +249,7 @@ class ReviewTask(Base):
     suggest_deep_review = Column(Boolean, default=False)
     coze_message = Column(Text, nullable=True)
     token_cost = Column(Integer, nullable=True)
+    use_coze = Column(Boolean, default=True, nullable=False)
 
     # 规则版本快照
     rule_version_id = Column(
@@ -297,6 +298,7 @@ class ReviewTask(Base):
             "risk_summary": self.risk_summary,
             "suggest_deep_review": self.suggest_deep_review,
             "token_cost": self.token_cost,
+            "use_coze": self.use_coze,
             "status": self.status.value if self.status else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
@@ -559,6 +561,7 @@ class ComparisonTask(Base):
     coze_enhanced = Column(JSON, nullable=True)
     total_risks = Column(Integer, default=0)
     token_cost = Column(Integer, nullable=True)
+    enhance = Column(Boolean, default=True, nullable=False)
 
     # 规则版本快照
     rule_version_id = Column(
@@ -609,6 +612,7 @@ class ComparisonTask(Base):
             "diff_stats": self.diff_stats,
             "total_risks": self.total_risks,
             "token_cost": self.token_cost,
+            "enhance": self.enhance,
             "status": self.status.value if self.status else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "completed_at": self.completed_at.isoformat()

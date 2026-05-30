@@ -25,6 +25,7 @@ class ComplassServiceSettings(BaseSettings):
     coze_workflow_timeout_seconds: float = 120.0
     coze_upload_timeout_seconds: float = 120.0
     max_upload_size_mb: int = 20
+    task_upload_dir: str = "/app/task_uploads"
 
     # CORS 允许的来源列表，逗号分隔
     cors_allow_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
@@ -42,6 +43,9 @@ class ComplassServiceSettings(BaseSettings):
     feishu_app_secret: str = ""
     feishu_verification_token: str = ""
     feishu_encrypt_key: str = ""
+
+    # 前端地址（飞书卡片结果链接）
+    frontend_base_url: str = "http://82.156.132.43"
 
     # JWT 配置
     jwt_secret_key: str = (
