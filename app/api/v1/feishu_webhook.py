@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import shutil
 from typing import Any
 
 from fastapi import APIRouter
@@ -30,6 +31,26 @@ from app.services.sanitization_service import sanitize_contract_text
 logger = logging.getLogger(__name__)
 
 feishu_router = APIRouter(prefix="/feishu", tags=["飞书机器人"])
+
+# ---- 飞书事件验证 ----
+
+
+def _verify_feishu_event(body: dict) -> bool:
+    """校验飞书事件请求的 token 是否匹配。"""
+    s = get_complass_service_settings()
+    expected = s.feishu_verification_token
+    if not expected:
+        logger.warning("[Feishu] 未配置 FEISHU_VERIFICATION_TOKEN，跳过校验")
+        return True
+    return body.get("token") == expected
+
+
+def _try_decrypt_event(body: dict) -> dict:
+    """飞书加密模式占位：当前要求飞书应用关闭 Encrypt 模式。"""
+    if body.get("encrypt"):
+        logger.error("[Feishu] 收到加密事件，请在飞书开放平台关闭 Encrypt 模式")
+    return body
+
 
 # ---- Redis 单例 ----
 
@@ -68,11 +89,19 @@ async def feishu_event(
     body = await request.json()
     logger.info(f"[Feishu] 收到事件: {json.dumps(body, ensure_ascii=False)[:2000]}")
 
-    # 1. URL 验证（飞书首次配置）
+    # 解密（如果启用）
+    body = _try_decrypt_event(body)
+
+    # URL 验证（飞书首次配置）
     if body.get("type") == "url_verification":
         return {"challenge": body["challenge"]}
 
-    # 2. 事件回调
+    # 事件校验
+    if not _verify_feishu_event(body):
+        logger.warning("[Feishu] token 校验失败，拒绝事件")
+        return {"code": 0}
+
+    # 事件回调
     event_data = body.get("event", {})
     if not event_data:
         return {"code": 0}
@@ -214,7 +243,7 @@ async def _handle_card_action(event: dict, db: Session) -> dict[str, Any]:
     session = svc.get(session_id)
     if not session:
         await send_text_message(
-            event.get("context", {}).get("chat_id", ""), "会话已过期，请重新发送文件"
+            event.get("open_chat_id", ""), "会话已过期，请重新发送文件"
         )
         return {"code": 0}
 
@@ -278,7 +307,14 @@ async def _do_review(
         status=TaskStatus.PENDING,
     )
     db.add(task)
-    db.commit()
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[Feishu] 审查任务创建失败: {e}")
+        await send_text_message(chat_id, "任务创建失败，请稍后重试")
+        _cleanup(svc, session)
+        return {"code": 0}
 
     card = build_result_card(task_id, "review", file_name)
     await send_card_message(chat_id, card)
@@ -338,7 +374,14 @@ async def _do_compare(
         status=TaskStatus.PENDING,
     )
     db.add(task)
-    db.commit()
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[Feishu] 比对任务创建失败: {e}")
+        await send_text_message(chat_id, "任务创建失败，请稍后重试")
+        _cleanup(svc, session)
+        return {"code": 0}
 
     card = build_result_card(
         task_id, "comparison", f"{file_a['file_name']} vs {file_b['file_name']}"
@@ -362,12 +405,16 @@ def _match_user(db: Session, open_id: str) -> str | None:
 def _cleanup(svc: IMSessionService, session: dict) -> None:
     """删除 Redis 会话和临时文件。"""
     sid = session.get("session_id", "")
-    if sid:
-        svc.delete(sid)
+    dirs_to_clean = set()
     for f in session.get("files", []):
         path = f.get("file_path", "")
         if path and os.path.exists(path):
             os.remove(path)
+            dirs_to_clean.add(os.path.dirname(path))
+    for d in dirs_to_clean:
+        shutil.rmtree(d, ignore_errors=True)
+    if sid:
+        svc.delete(sid)
 
 
 def _uuid() -> str:
