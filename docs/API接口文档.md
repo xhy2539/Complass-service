@@ -26,6 +26,7 @@
 ```json
 {
   "email": "user@example.com",
+  "phone": "13800138000",
   "nickname": "张三",
   "password": "123456"
 }
@@ -35,6 +36,7 @@
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | email | string | 是 | 邮箱（唯一） |
+| phone | string | 是 | 手机号（11-20位） |
 | nickname | string | 是 | 昵称 |
 | password | string | 是 | 密码（至少6位） |
 
@@ -43,15 +45,18 @@
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "token_type": "bearer",
-  "expires_in": 86400,
+  "expires_in": 604800,
   "user": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "email": "user@example.com",
+    "phone": "13800138000",
     "nickname": "张三",
     "is_active": true,
     "is_verified": false,
     "created_at": "2026-05-07T10:00:00",
-    "last_login_at": null
+    "last_login_at": null,
+    "token_quota": 0,
+    "token_used": 0
   }
 }
 ```
@@ -62,28 +67,38 @@
 
 **接口**: `POST /api/v1/auth/login`
 
+支持邮箱或手机号登录。
+
 **请求体**:
 ```json
 {
-  "email": "user@example.com",
+  "account": "13800138000",
   "password": "123456"
 }
 ```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| account | string | 是 | 邮箱或手机号 |
+| password | string | 是 | 密码 |
 
 **响应** (200 OK):
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "token_type": "bearer",
-  "expires_in": 86400,
+  "expires_in": 604800,
   "user": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "email": "user@example.com",
+    "phone": "13800138000",
     "nickname": "张三",
     "is_active": true,
     "is_verified": false,
     "created_at": "2026-05-07T10:00:00",
-    "last_login_at": "2026-05-07T12:00:00"
+    "last_login_at": "2026-05-07T12:00:00",
+    "token_quota": 0,
+    "token_used": 0
   }
 }
 ```
