@@ -5,6 +5,9 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+# Use aliyun mirror for faster apt downloads in China
+RUN sed -i "s|http://deb.debian.org/debian|http://mirrors.aliyun.com/debian|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
+
 # curl is used by the container healthcheck in docker-compose.yml.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
