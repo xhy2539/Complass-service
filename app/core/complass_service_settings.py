@@ -32,6 +32,17 @@ class ComplassServiceSettings(BaseSettings):
     # 管理员邮箱
     admin_email: str = "1121799294@qq.com"
 
+    # Redis
+    redis_host: str = "redis"
+    redis_port: int = 6379
+    redis_db: int = 0
+
+    # 飞书
+    feishu_app_id: str = ""
+    feishu_app_secret: str = ""
+    feishu_verification_token: str = ""
+    feishu_encrypt_key: str = ""
+
     # JWT 配置
     jwt_secret_key: str = (
         "your-super-secret-key-change-in-production"  # 生产环境必须更换

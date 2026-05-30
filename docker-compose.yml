@@ -23,6 +23,16 @@ services:
     networks:
       - complass
 
+  redis:
+    image: docker.m.daocloud.io/library/redis:7-alpine
+    container_name: complass-redis
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - ./redis_data:/data
+    networks:
+      - complass
+
   complass-service:
     image: ${IMAGE:-complass-service:latest}
     container_name: complass-service
