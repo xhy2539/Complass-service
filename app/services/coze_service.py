@@ -77,7 +77,7 @@ def build_review_workflow_input(
         "contract_type": contract_type,
         "sanitized_text": sanitized_text or "",
         "sanitization_enabled": bool(sanitized_text),
-        "audit_rules_api_url": "http://complass-service:8080/api/audit-rules",
+        "audit_rules_api_url": "http://82.156.132.43:8080/api/audit-rules",
     }
     return {"input": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}
 
@@ -93,7 +93,7 @@ def build_review_workflow_object_input(
         "contract_type": contract_type,
         "sanitized_text": sanitized_text or "",
         "sanitization_enabled": bool(sanitized_text),
-        "audit_rules_api_url": "http://complass-service:8080/api/audit-rules",
+        "audit_rules_api_url": "http://82.156.132.43:8080/api/audit-rules",
     }
     return {"input": json.dumps(payload, ensure_ascii=False)}
 
