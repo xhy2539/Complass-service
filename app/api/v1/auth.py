@@ -99,7 +99,7 @@ async def login(
     - password: 密码
     """
     # 查找用户（邮箱或手机号）
-    account = request.account
+    account = request.account or request.email
     user = (
         db.query(User).filter((User.email == account) | (User.phone == account)).first()
     )

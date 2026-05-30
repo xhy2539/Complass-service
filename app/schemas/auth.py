@@ -22,7 +22,10 @@ class UserRegisterRequest(BaseModel):
 class UserLoginRequest(BaseModel):
     """用户登录请求，支持邮箱或手机号。"""
 
-    account: str = Field(..., min_length=5, max_length=255, description="邮箱或手机号")
+    account: Optional[str] = Field(
+        None, min_length=5, max_length=255, description="邮箱或手机号"
+    )
+    email: Optional[str] = Field(None, description="邮箱登录（兼容旧客户端）")
     password: str = Field(..., description="密码")
 
 
