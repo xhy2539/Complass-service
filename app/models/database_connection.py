@@ -68,6 +68,9 @@ def _ensure_schema_updates() -> None:
     _add_column_if_missing("comparison_tasks", "sanitization_error", "TEXT")
     _add_column_if_missing("comparison_risk_points", "rule_code", "VARCHAR(50)")
     _add_column_if_missing("comparison_risk_points", "rule_snapshot_json", "JSON")
+    _add_column_if_missing(
+        "risk_points", "action_type", "VARCHAR(20) NOT NULL DEFAULT 'manual'"
+    )
     _add_column_if_missing("users", "phone", "VARCHAR(20) NOT NULL DEFAULT ''")
     _add_column_if_missing("users", "token_quota", "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing("users", "token_used", "INTEGER NOT NULL DEFAULT 0")
