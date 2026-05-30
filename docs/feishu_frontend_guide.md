@@ -7,8 +7,10 @@
 ## URL 格式
 
 ```
-审查任务：http://82.156.132.43/?task_id={id}&view=review
-比对任务：http://82.156.132.43/?task_id={id}&view=comparison
+审查任务：{FRONTEND_BASE_URL}/?task_id={id}&view=review
+比对任务：{FRONTEND_BASE_URL}/?task_id={id}&view=comparison
+
+> `FRONTEND_BASE_URL` 通过 `.env` 的 `FRONTEND_BASE_URL` 配置，默认为 `http://82.156.132.43`
 ```
 
 ## 前端需要做的

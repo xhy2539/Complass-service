@@ -158,7 +158,8 @@ def build_action_card(session_id: str, file_name: str) -> dict[str, Any]:
 def build_result_card(task_id: str, task_type: str, file_name: str) -> dict[str, Any]:
     """构建结果链接卡片。"""
     view = "review" if task_type == "review" else "comparison"
-    url = f"http://82.156.132.43/?task_id={task_id}&view={view}"
+    base = get_complass_service_settings().frontend_base_url
+    url = f"{base}/?task_id={task_id}&view={view}"
     return {
         "header": {"title": {"content": "审查完成", "tag": "plain_text"}},
         "elements": [
