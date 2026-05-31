@@ -11,7 +11,7 @@ pipeline {
         DEPLOY_HOST = '82.156.132.43'
         DEPLOY_USER = 'root'
         DEPLOY_DIR = '/opt/complass-service'
-        DEPLOY_SSH_CREDENTIALS_ID = 'prod-server-ssh'
+        DEPLOY_SSH_CREDENTIALS_ID = 'jenkins'
     }
 
     stages {
@@ -162,7 +162,7 @@ pipeline {
                             git checkout -- . 2>/dev/null || true
                             git stash clear 2>/dev/null || true
                             git pull --ff-only
-                            docker build --no-cache -t complass-service:latest .
+                            docker build -t complass-service:latest .
                             docker compose up -d
                             docker compose ps
                             curl -f http://127.0.0.1:8080/health
