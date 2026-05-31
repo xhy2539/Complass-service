@@ -120,6 +120,7 @@ async def create_comparison_task(
         old_file_path=old_file_path,
         new_file_path=new_file_path,
         sanitization_status="not_required",
+        diff_details_json=[],
         rules_snapshot_json=[],
         contract_type=contract_type,
         enhance=enhance,
