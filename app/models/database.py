@@ -99,66 +99,13 @@ class ReviewType(str, Enum):
     COMPARISON = "comparison"  # 版本比对
 
 
-class RuleVersionStatus(str, Enum):
-    """规则版本状态枚举。"""
-
-    DRAFT = "draft"
-    ACTIVE = "active"
-    ARCHIVED = "archived"
-
-
-class ReviewRuleVersion(Base):
-    """规则版本表，用于锁定每次审查使用的规则集合。"""
-
-    __tablename__ = "review_rule_versions"
-
-    id = Column(String(36), primary_key=True)
-    version_no = Column(Integer, unique=True, nullable=False, index=True)
-    name = Column(String(100), nullable=False)
-    description = Column(Text, nullable=True)
-    status = Column(
-        SQLEnum(RuleVersionStatus), default=RuleVersionStatus.DRAFT, nullable=False
-    )
-    created_by_user_id = Column(
-        String(36), ForeignKey("users.id"), nullable=True, index=True
-    )
-    activated_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
-
-    rules = relationship(
-        "ReviewRule", back_populates="version", cascade="all, delete-orphan"
-    )
-
-    def to_dict(self) -> dict:
-        """转换为接口响应字典。"""
-        return {
-            "id": self.id,
-            "version_no": self.version_no,
-            "name": self.name,
-            "description": self.description,
-            "status": self.status.value if self.status else None,
-            "activated_at": self.activated_at.isoformat()
-            if self.activated_at
-            else None,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "rule_count": len(self.rules),
-        }
-
-
 class ReviewRule(Base):
     """审核规则明细表。"""
 
     __tablename__ = "review_rules"
 
     id = Column(String(36), primary_key=True)
-    version_id = Column(
-        String(36), ForeignKey("review_rule_versions.id"), nullable=False, index=True
-    )
-    rule_code = Column(String(50), nullable=False)
+    rule_code = Column(String(50), nullable=False, unique=True)
     contract_type = Column(String(50), nullable=False)
     review_module = Column(String(50), nullable=False)
     risk_name = Column(String(100), nullable=False)
@@ -167,25 +114,17 @@ class ReviewRule(Base):
     default_risk_level = Column(String(20), nullable=False)
     suggestion_template = Column(Text, nullable=True)
     example_clause = Column(Text, nullable=True)
+    review_perspective = Column(String(20), nullable=False, default="通用")
     enabled = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
-    version = relationship("ReviewRuleVersion", back_populates="rules")
-
-    __table_args__ = (
-        Index(
-            "ix_review_rules_version_rule_code", "version_id", "rule_code", unique=True
-        ),
-    )
-
     def to_dict(self) -> dict:
         """转换为接口响应字典。"""
         return {
             "id": self.id,
-            "version_id": self.version_id,
             "rule_code": self.rule_code,
             "contract_type": self.contract_type,
             "review_module": self.review_module,
@@ -195,6 +134,7 @@ class ReviewRule(Base):
             "default_risk_level": self.default_risk_level,
             "suggestion_template": self.suggestion_template,
             "example_clause": self.example_clause,
+            "review_perspective": self.review_perspective,
             "enabled": self.enabled,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
@@ -241,9 +181,7 @@ class ReviewTask(Base):
     use_coze = Column(Boolean, default=True, nullable=False)
 
     # 规则版本快照
-    rule_version_id = Column(
-        String(36), ForeignKey("review_rule_versions.id"), nullable=True, index=True
-    )
+    rule_version_id = Column(String(36), nullable=True, index=True)
     rules_snapshot_json = Column(JSON, nullable=True)
     contract_type = Column(String(50), default="通用", nullable=False)
 
@@ -555,9 +493,7 @@ class ComparisonTask(Base):
     enhance = Column(Boolean, default=True, nullable=False)
 
     # 规则版本快照
-    rule_version_id = Column(
-        String(36), ForeignKey("review_rule_versions.id"), nullable=True, index=True
-    )
+    rule_version_id = Column(String(36), nullable=True, index=True)
     rules_snapshot_json = Column(JSON, nullable=True)
     contract_type = Column(String(50), default="通用", nullable=False)
 

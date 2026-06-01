@@ -6,8 +6,6 @@ from fastapi import Query
 from sqlalchemy.orm import Session
 
 from app.models.database import ReviewRule
-from app.models.database import ReviewRuleVersion
-from app.models.database import RuleVersionStatus
 from app.models.database_connection import get_db
 
 audit_rules_router = APIRouter(tags=["Coze 规则查询"])
@@ -43,21 +41,6 @@ def get_audit_rules(
 ) -> dict:
     """Coze 审查工作流 HTTP 节点调用的规则查询接口。"""
 
-    # 获取激活版本
-    version = (
-        db.query(ReviewRuleVersion)
-        .filter(ReviewRuleVersion.status == RuleVersionStatus.ACTIVE)
-        .first()
-    )
-    if not version:
-        return {
-            "finance_rules": [],
-            "legal_rules": [],
-            "performance_rules": [],
-            "other_rules": [],
-            "debug_info": {"error": "no active rule version"},
-        }
-
     # 确定查询的合同类型
     types: set[str]
     if contract_type in ("其他", ""):
@@ -69,7 +52,6 @@ def get_audit_rules(
     rules = (
         db.query(ReviewRule)
         .filter(
-            ReviewRule.version_id == version.id,
             ReviewRule.enabled == True,  # noqa: E712
             ReviewRule.contract_type.in_(types),
         )

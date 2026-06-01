@@ -263,7 +263,7 @@ async def _run_comparison_task_async(
     task.old_sanitization_mapping_json = old_sanitization.mappings
     task.new_sanitization_mapping_json = new_sanitization.mappings
     task.sanitization_status = "completed"
-    task.rule_version_id = rule_version.id if rule_version else None
+    task.rule_version_id = None
     task.rules_snapshot_json = rules_snapshot
 
     old_doc_id = _uuid()
@@ -437,7 +437,6 @@ async def _run_comparison_task_async(
                     "diff_stats": task.diff_stats,
                     "diff_texts": diff_texts,
                     "rules": rules_snapshot,
-                    "rule_version_id": rule_version.id if rule_version else None,
                     "contract_type": contract_type,
                 }
             )
