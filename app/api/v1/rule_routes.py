@@ -1,4 +1,4 @@
-"""规则库管理路由，提供规则 CRUD、版本和 CSV 导入能力。"""
+"""规则库管理路由，提供规则 CRUD 和 CSV 导入能力。"""
 
 from typing import Optional
 
@@ -18,15 +18,9 @@ from app.schemas.rule import RuleEnabledRequest
 from app.schemas.rule import RuleListResponse
 from app.schemas.rule import RuleResponse
 from app.schemas.rule import RuleUpdateRequest
-from app.schemas.rule import RuleVersionCreateRequest
-from app.schemas.rule import RuleVersionResponse
 from app.services.rule_importer import parse_rules_csv
-from app.services.rule_service import activate_rule_version
 from app.services.rule_service import create_rule
-from app.services.rule_service import create_rule_version
 from app.services.rule_service import delete_rule
-from app.services.rule_service import get_active_rule_version
-from app.services.rule_service import list_rule_versions
 from app.services.rule_service import list_rules
 from app.services.rule_service import update_rule
 
@@ -37,14 +31,13 @@ rule_router = APIRouter(tags=["规则库管理"])
 async def get_rules(
     skip: int = 0,
     limit: int = 100,
-    version_id: Optional[str] = None,
     contract_type: Optional[str] = None,
     enabled: Optional[bool] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> RuleListResponse:
     """查询规则列表。"""
-    rules, total = list_rules(db, version_id, contract_type, enabled, skip, limit)
+    rules, total = list_rules(db, contract_type, enabled, skip, limit)
     return RuleListResponse(
         rules=[RuleResponse.model_validate(rule.to_dict()) for rule in rules],
         total=total,
@@ -56,20 +49,12 @@ async def get_rules(
 @rule_router.post("/rules", response_model=RuleResponse)
 async def add_rule(
     request: RuleCreateRequest,
-    version_id: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> RuleResponse:
     """创建规则。"""
-    target_version_id = version_id
-    if not target_version_id:
-        active_version = get_active_rule_version(db)
-        if not active_version:
-            raise HTTPException(status_code=400, detail="当前没有激活的规则版本")
-        target_version_id = active_version.id
-
     try:
-        rule = create_rule(db, target_version_id, request.model_dump())
+        rule = create_rule(db, request.model_dump())
         db.commit()
     except ValueError as exc:
         db.rollback()
@@ -134,74 +119,23 @@ async def import_rules_csv(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CsvImportResponse:
-    """导入规则 CSV 并创建草稿版本。"""
+    """导入规则 CSV，直接写入规则表。"""
     content = await file.read()
     rules, errors = parse_rules_csv(content)
     if errors:
         return CsvImportResponse(success=False, imported_count=0, errors=errors)
 
-    try:
-        version = create_rule_version(
-            db,
-            name=file.filename or "CSV 导入规则版本",
-            description="CSV 导入",
-            user_id=current_user.id,
-        )
-        for rule_data in rules:
-            create_rule(db, version.id, rule_data | {"enabled": True})
-        db.commit()
-    except ValueError as exc:
-        db.rollback()
-        raise HTTPException(status_code=400, detail=str(exc))
+    imported = 0
+    for rule_data in rules:
+        try:
+            create_rule(db, rule_data | {"enabled": True})
+            imported += 1
+        except ValueError:
+            pass  # skip duplicates
+    db.commit()
 
     return CsvImportResponse(
         success=True,
-        version_id=version.id,
-        version_no=version.version_no,
-        imported_count=len(rules),
+        imported_count=imported,
         errors=[],
     )
-
-
-@rule_router.get("/rule-versions", response_model=list[RuleVersionResponse])
-async def get_rule_versions(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> list[RuleVersionResponse]:
-    """查询规则版本列表。"""
-    return [
-        RuleVersionResponse.model_validate(version.to_dict())
-        for version in list_rule_versions(db)
-    ]
-
-
-@rule_router.post("/rule-versions", response_model=RuleVersionResponse)
-async def add_rule_version(
-    request: RuleVersionCreateRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> RuleVersionResponse:
-    """创建规则版本。"""
-    version = create_rule_version(
-        db, request.name, request.description, current_user.id
-    )
-    db.commit()
-    return RuleVersionResponse.model_validate(version.to_dict())
-
-
-@rule_router.post(
-    "/rule-versions/{version_id}/activate", response_model=RuleVersionResponse
-)
-async def activate_version(
-    version_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> RuleVersionResponse:
-    """激活规则版本。"""
-    try:
-        version = activate_rule_version(db, version_id)
-        db.commit()
-    except ValueError as exc:
-        db.rollback()
-        raise HTTPException(status_code=404, detail=str(exc))
-    return RuleVersionResponse.model_validate(version.to_dict())

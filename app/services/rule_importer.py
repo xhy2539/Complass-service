@@ -13,10 +13,12 @@ CSV_FIELD_MAP = {
     "默认风险等级": "default_risk_level",
     "修改建议模板": "suggestion_template",
     "示例问题条款": "example_clause",
+    "审核视角": "review_perspective",
 }
 
 REQUIRED_FIELDS = ["规则编号", "合同类型", "审核模块", "风险名称", "默认风险等级"]
 VALID_RISK_LEVELS = {"高", "中", "低"}
+VALID_PERSPECTIVES = {"甲方", "乙方", "中立", "通用"}
 
 
 def parse_rules_csv(content: bytes) -> tuple[list[dict], list[dict]]:
@@ -43,9 +45,10 @@ def parse_rules_csv(content: bytes) -> tuple[list[dict], list[dict]]:
             errors.extend(row_errors)
             continue
 
-        rules.append(
-            {target: normalized[source] for source, target in CSV_FIELD_MAP.items()}
-        )
+        rule = {target: normalized[source] for source, target in CSV_FIELD_MAP.items()}
+        if not rule.get("review_perspective"):
+            rule["review_perspective"] = "通用"
+        rules.append(rule)
 
     return rules, errors
 
@@ -92,6 +95,16 @@ def _validate_row(
                 "row": row_index,
                 "field": "默认风险等级",
                 "message": "默认风险等级必须是 高/中/低",
+            }
+        )
+
+    perspective = row.get("审核视角", "")
+    if perspective and perspective not in VALID_PERSPECTIVES:
+        errors.append(
+            {
+                "row": row_index,
+                "field": "审核视角",
+                "message": "审核视角必须是 甲方/乙方/中立/通用",
             }
         )
 

@@ -322,6 +322,52 @@ CREATE TABLE `comparison_risk_points` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
+--
+-- Table structure for table `review_rules`
+--
+
+DROP TABLE IF EXISTS `review_rules`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `review_rules` (
+  `id` varchar(36) NOT NULL,
+  `rule_code` varchar(50) NOT NULL,
+  `contract_type` varchar(50) NOT NULL,
+  `review_module` varchar(50) NOT NULL,
+  `risk_name` varchar(100) NOT NULL,
+  `check_point` text,
+  `trigger_condition` text,
+  `default_risk_level` varchar(20) NOT NULL,
+  `suggestion_template` text,
+  `example_clause` text,
+  `review_perspective` varchar(20) NOT NULL DEFAULT '通用',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_rule_code` (`rule_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `feishu_users`
+--
+
+DROP TABLE IF EXISTS `feishu_users`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `feishu_users` (
+  `id` varchar(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `feishu_open_id` varchar(64) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_feishu_open_id` (`feishu_open_id`),
+  KEY `ix_feishu_users_user_id` (`user_id`),
+  CONSTRAINT `feishu_users_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

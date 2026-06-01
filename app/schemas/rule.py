@@ -18,6 +18,7 @@ class RuleCreateRequest(BaseModel):
     default_risk_level: str = Field(..., description="高/中/低")
     suggestion_template: Optional[str] = None
     example_clause: Optional[str] = None
+    review_perspective: str = "通用"
     enabled: bool = True
 
 
@@ -32,6 +33,7 @@ class RuleUpdateRequest(BaseModel):
     default_risk_level: Optional[str] = None
     suggestion_template: Optional[str] = None
     example_clause: Optional[str] = None
+    review_perspective: Optional[str] = None
     enabled: Optional[bool] = None
 
 
@@ -41,18 +43,10 @@ class RuleEnabledRequest(BaseModel):
     enabled: bool
 
 
-class RuleVersionCreateRequest(BaseModel):
-    """创建规则版本请求。"""
-
-    name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = None
-
-
 class RuleResponse(BaseModel):
     """规则响应。"""
 
     id: str
-    version_id: str
     rule_code: str
     contract_type: str
     review_module: str
@@ -62,6 +56,7 @@ class RuleResponse(BaseModel):
     default_risk_level: str
     suggestion_template: Optional[str] = None
     example_clause: Optional[str] = None
+    review_perspective: str = "通用"
     enabled: bool
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -76,20 +71,6 @@ class RuleListResponse(BaseModel):
     limit: int
 
 
-class RuleVersionResponse(BaseModel):
-    """规则版本响应。"""
-
-    id: str
-    version_no: int
-    name: str
-    description: Optional[str] = None
-    status: str
-    activated_at: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    rule_count: int = 0
-
-
 class CsvImportErrorItem(BaseModel):
     """CSV 导入错误项。"""
 
@@ -102,7 +83,5 @@ class CsvImportResponse(BaseModel):
     """CSV 导入响应。"""
 
     success: bool
-    version_id: Optional[str] = None
-    version_no: Optional[int] = None
     imported_count: int = 0
     errors: list[CsvImportErrorItem] = []
