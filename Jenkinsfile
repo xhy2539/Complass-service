@@ -170,7 +170,6 @@ pipeline {
                         "
                     '''
                 }
-                }
                 sh '''
                     curl -s -X POST "https://sctapi.ftqq.com/SCT357126TkY7NT14gipcfiCUmAc7z49Lz.send" -d "title=Jenkins 部署成功" -d "desp=后端服务已部署" >/dev/null || true
                 '''
