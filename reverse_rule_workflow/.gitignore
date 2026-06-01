@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-tmp/
+pytest-cache-files-*/
+test-tmp/
+storage/test_*/
+storage/reverse_rule_kb/*.tmp
+storage/reverse_rule_kb/write_probe.txt
