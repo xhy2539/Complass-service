@@ -32,7 +32,7 @@ from app.services.document_parser import DocumentParser
 from app.services.reverse_rule_task_service import import_candidates
 from app.services.reverse_rule_task_service import process_task_async
 
-reverse_rule_router = APIRouter(prefix="/reverse-rules", tags=["规则逆向解析"])
+reverse_rule_router = APIRouter(prefix="/reverse-rule-tasks", tags=["规则逆向解析"])
 
 
 def _uuid() -> str:
