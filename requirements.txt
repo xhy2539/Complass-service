@@ -23,5 +23,8 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 email-validator==2.1.0
 
+# HTTP client (sync)
+requests==2.32.3
+
 # Redis
 redis==5.2.1
