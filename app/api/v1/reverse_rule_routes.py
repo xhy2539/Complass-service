@@ -9,8 +9,8 @@ from typing import Optional
 from fastapi import APIRouter
 from fastapi import BackgroundTasks
 from fastapi import Depends
-from fastapi import File
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -59,42 +59,45 @@ def _get_user_task(db: Session, task_id: str, user_id: str) -> ReverseRuleTask:
 
 @reverse_rule_router.post("", response_model=TaskResponse)
 async def create_reverse_rule_task(
+    request: Request,
     background_tasks: BackgroundTasks,
-    task_name: str = "逆向解析任务",
-    contract_type: Optional[str] = "通用",
-    review_role: Optional[str] = "通用",
-    pair1_before: UploadFile = File(...),
-    pair1_after: UploadFile = File(...),
-    pair2_before: UploadFile = File(None),
-    pair2_after: UploadFile = File(None),
-    pair3_before: UploadFile = File(None),
-    pair3_after: UploadFile = File(None),
-    pair4_before: UploadFile = File(None),
-    pair4_after: UploadFile = File(None),
-    pair5_before: UploadFile = File(None),
-    pair5_after: UploadFile = File(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TaskResponse:
     """创建逆向解析任务。支持 1-5 组修改前/后合同文件。"""
+    form = await request.form()
+    task_name = form.get("task_name", "逆向解析任务")
+    contract_type = form.get("contract_type", "通用")
+    review_role = form.get("review_role", "通用")
 
-    upload_pairs = [
-        (pair1_before, pair1_after, "pair1"),
-        (pair2_before, pair2_after, "pair2"),
-        (pair3_before, pair3_after, "pair3"),
-        (pair4_before, pair4_after, "pair4"),
-        (pair5_before, pair5_after, "pair5"),
-    ]
+    # 解析 pairs[N][pair_name], pairs[N][before_file], pairs[N][after_file]
+    pairs_by_index: dict[int, dict] = {}
+    for key in form:
+        if key.startswith("pairs["):
+            # pairs[0][before_file] → idx=0, field=before_file
+            rest = key[6:]  # remove "pairs["
+            idx_str, field = rest.split("][", 1)
+            idx = int(idx_str)
+            field = field.rstrip("]")  # remove trailing "]"
+            if idx not in pairs_by_index:
+                pairs_by_index[idx] = {}
+            pairs_by_index[idx][field] = form[key]
 
     contract_pairs = []
-    for before, after, name in upload_pairs:
-        if before is None or after is None:
+    for idx in sorted(pairs_by_index.keys()):
+        entry = pairs_by_index[idx]
+        pair_name = str(entry.get("pair_name", f"pair{idx + 1}"))
+        before_file = entry.get("before_file")
+        after_file = entry.get("after_file")
+        if before_file is None or after_file is None:
             continue
+        before_text = await _read_upload_text(before_file)
+        after_text = await _read_upload_text(after_file)
         contract_pairs.append(
             {
-                "pair_name": name,
-                "before_text": await _read_upload_text(before),
-                "after_text": await _read_upload_text(after),
+                "pair_name": pair_name,
+                "before_text": before_text,
+                "after_text": after_text,
             }
         )
 
