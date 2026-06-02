@@ -21,11 +21,12 @@ COPY reverse_rule_workflow/requirements.txt /tmp/rw_req.txt
 RUN pip install --no-cache-dir -r /tmp/rw_req.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com 2>/dev/null || true
 
 COPY app ./app
-COPY reverse_rule_workflow /reverse_rule_workflow
-COPY reverse_rule_workflow/data /app/data
-COPY reverse_rule_workflow/storage /app/storage
-
-ENV PYTHONPATH="/:${PYTHONPATH}"
+COPY reverse_rule_workflow /rw_src
+RUN cd /rw_src \
+    && find . -name "*.py" -exec sed -i "s|from app\.|from rw.|g; s|import app\.|import rw.|g" {} \; \
+    && mv app rw
+COPY reverse_rule_workflow/data /app/data/
+COPY reverse_rule_workflow/storage /app/storage/
 
 EXPOSE 8080
 

@@ -16,10 +16,10 @@ def run_reverse_rule_workflow(contract_pairs: list[dict]) -> dict:
     """调用 reverse_rule_workflow 子项目的核心流程。"""
     import sys
 
-    _rw_path = "/reverse_rule_workflow"
+    _rw_path = "/rw_src"
     if _rw_path not in sys.path:
         sys.path.insert(0, _rw_path)
-    from app.chains.reverse_rule_graph import run_reverse_rule_extraction
+    from rw.chains.reverse_rule_graph import run_reverse_rule_extraction
 
     return run_reverse_rule_extraction(contract_pairs)
 
