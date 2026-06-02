@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 
 def run_reverse_rule_workflow(contract_pairs: list[dict]) -> dict:
     """调用 reverse_rule_workflow 子项目的核心流程。"""
+    import sys
+
+    _rw_path = "/reverse_rule_workflow"
+    if _rw_path not in sys.path:
+        sys.path.insert(0, _rw_path)
     from reverse_rule_workflow.app.chains.reverse_rule_graph import (
         run_reverse_rule_extraction,
     )
