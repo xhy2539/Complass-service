@@ -33,6 +33,9 @@ from app.services.reverse_rule_task_service import import_candidates
 from app.services.reverse_rule_task_service import process_task_async
 
 reverse_rule_router = APIRouter(prefix="/reverse-rule-tasks", tags=["规则逆向解析"])
+reverse_rule_candidate_router = APIRouter(
+    prefix="/reverse-rule-candidates", tags=["规则逆向解析"]
+)
 
 
 def _uuid() -> str:
@@ -242,7 +245,7 @@ def list_candidates(
 
 
 @reverse_rule_router.patch(
-    "/tasks/{task_id}/candidates/decide", response_model=DecideResponse
+    "/tasks/{task_id}/candidates/decision", response_model=DecideResponse
 )
 def decide_candidates(
     task_id: str,
@@ -286,7 +289,9 @@ def decide_candidates(
 # --- 确认入库 ---
 
 
-@reverse_rule_router.post("/tasks/{task_id}/import", response_model=ImportResponse)
+@reverse_rule_router.post(
+    "/tasks/{task_id}/confirm-import", response_model=ImportResponse
+)
 def import_to_rule_library(
     task_id: str,
     request: ImportRequest,
@@ -386,3 +391,33 @@ def export_candidates(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+# --- 单条候选规则决策 ---
+
+
+@reverse_rule_candidate_router.patch(
+    "/{candidate_id}/decision", response_model=CandidateRuleResponse
+)
+def decide_single_candidate(
+    candidate_id: str,
+    request: DecideRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CandidateRuleResponse:
+    """设置单条候选规则决策状态。"""
+    candidate = (
+        db.query(ReverseRuleCandidate)
+        .filter(ReverseRuleCandidate.id == candidate_id)
+        .first()
+    )
+    if not candidate:
+        raise HTTPException(status_code=404, detail="候选规则不存在")
+
+    if request.decision not in ("included", "ignored", "pending"):
+        raise HTTPException(status_code=400, detail="无效的 decision 值")
+
+    candidate.decision = request.decision
+    db.commit()
+
+    return CandidateRuleResponse.model_validate(candidate.to_dict())
