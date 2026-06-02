@@ -17,7 +17,15 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com \
     && pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
 
+COPY reverse_rule_workflow/requirements.txt /tmp/rw_req.txt
+RUN pip install --no-cache-dir -r /tmp/rw_req.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com 2>/dev/null || true
+
 COPY app ./app
+COPY reverse_rule_workflow /reverse_rule_workflow
+COPY reverse_rule_workflow/data /app/data
+COPY reverse_rule_workflow/storage /app/storage
+
+ENV PYTHONPATH="/:${PYTHONPATH}"
 
 EXPOSE 8080
 
