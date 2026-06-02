@@ -57,7 +57,7 @@ def _get_user_task(db: Session, task_id: str, user_id: str) -> ReverseRuleTask:
 # --- 任务创建 ---
 
 
-@reverse_rule_router.post("/tasks", response_model=TaskResponse)
+@reverse_rule_router.post("", response_model=TaskResponse)
 async def create_reverse_rule_task(
     background_tasks: BackgroundTasks,
     task_name: str = "逆向解析任务",
@@ -157,7 +157,7 @@ def recover_pending_reverse_rule_tasks() -> int:
 # --- 任务列表 ---
 
 
-@reverse_rule_router.get("/tasks", response_model=TaskListResponse)
+@reverse_rule_router.get("", response_model=TaskListResponse)
 def list_reverse_rule_tasks(
     skip: int = 0,
     limit: int = 20,
@@ -202,7 +202,7 @@ def list_reverse_rule_tasks(
 # --- 任务详情 ---
 
 
-@reverse_rule_router.get("/tasks/{task_id}", response_model=TaskResponse)
+@reverse_rule_router.get("/{task_id}", response_model=TaskResponse)
 def get_reverse_rule_task(
     task_id: str,
     current_user: User = Depends(get_current_user),
@@ -216,9 +216,7 @@ def get_reverse_rule_task(
 # --- 候选规则列表 ---
 
 
-@reverse_rule_router.get(
-    "/tasks/{task_id}/candidates", response_model=CandidateListResponse
-)
+@reverse_rule_router.get("/{task_id}/candidates", response_model=CandidateListResponse)
 def list_candidates(
     task_id: str,
     current_user: User = Depends(get_current_user),
@@ -245,7 +243,7 @@ def list_candidates(
 
 
 @reverse_rule_router.patch(
-    "/tasks/{task_id}/candidates/decision", response_model=DecideResponse
+    "/{task_id}/candidates/decision", response_model=DecideResponse
 )
 def decide_candidates(
     task_id: str,
@@ -289,9 +287,7 @@ def decide_candidates(
 # --- 确认入库 ---
 
 
-@reverse_rule_router.post(
-    "/tasks/{task_id}/confirm-import", response_model=ImportResponse
-)
+@reverse_rule_router.post("/{task_id}/confirm-import", response_model=ImportResponse)
 def import_to_rule_library(
     task_id: str,
     request: ImportRequest,
@@ -307,7 +303,7 @@ def import_to_rule_library(
 # --- 重试 ---
 
 
-@reverse_rule_router.post("/tasks/{task_id}/retry", response_model=TaskResponse)
+@reverse_rule_router.post("/{task_id}/retry", response_model=TaskResponse)
 def retry_task(
     task_id: str,
     background_tasks: BackgroundTasks,
@@ -347,7 +343,7 @@ _EXPORT_HEADERS = [
 ]
 
 
-@reverse_rule_router.get("/tasks/{task_id}/export")
+@reverse_rule_router.get("/{task_id}/export")
 def export_candidates(
     task_id: str,
     current_user: User = Depends(get_current_user),
