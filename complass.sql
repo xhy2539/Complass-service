@@ -368,6 +368,60 @@ CREATE TABLE `feishu_users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
+--
+-- Table structure for table `reverse_rule_tasks`
+--
+
+DROP TABLE IF EXISTS `reverse_rule_tasks`;
+CREATE TABLE `reverse_rule_tasks` (
+  `id` varchar(36) NOT NULL,
+  `user_id` varchar(36) DEFAULT NULL,
+  `task_name` varchar(200) NOT NULL,
+  `contract_type` varchar(50) DEFAULT NULL,
+  `review_role` varchar(20) DEFAULT NULL,
+  `status` varchar(20) NOT NULL DEFAULT 'pending',
+  `progress` int NOT NULL DEFAULT '0',
+  `contract_pairs_json` json DEFAULT NULL,
+  `stats_json` json DEFAULT NULL,
+  `result_json` json DEFAULT NULL,
+  `error_message` text,
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  CONSTRAINT `reverse_rule_tasks_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+--
+-- Table structure for table `reverse_rule_candidates`
+--
+
+DROP TABLE IF EXISTS `reverse_rule_candidates`;
+CREATE TABLE `reverse_rule_candidates` (
+  `id` varchar(36) NOT NULL,
+  `task_id` varchar(36) NOT NULL,
+  `contract_type` varchar(50) NOT NULL DEFAULT '通用',
+  `review_module` varchar(50) NOT NULL,
+  `risk_name` varchar(100) NOT NULL,
+  `check_point` text,
+  `trigger_condition` text,
+  `default_risk_level` varchar(20) NOT NULL,
+  `suggestion_template` text,
+  `example_clause` text,
+  `review_perspective` varchar(20) NOT NULL DEFAULT '通用',
+  `traces_json` json DEFAULT NULL,
+  `source_pair_index` int DEFAULT NULL,
+  `decision` varchar(20) NOT NULL DEFAULT 'pending',
+  `confidence` int DEFAULT NULL,
+  `imported_rule_id` varchar(36) DEFAULT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `task_id` (`task_id`),
+  KEY `imported_rule_id` (`imported_rule_id`),
+  CONSTRAINT `reverse_rule_candidates_ibfk_1` FOREIGN KEY (`task_id`) REFERENCES `reverse_rule_tasks` (`id`),
+  CONSTRAINT `reverse_rule_candidates_ibfk_2` FOREIGN KEY (`imported_rule_id`) REFERENCES `review_rules` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
