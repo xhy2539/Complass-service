@@ -14,6 +14,7 @@ from pydantic import ConfigDict, Field
 
 from app.kb.loader import case_to_document, load_reverse_rule_cases
 from app.kb.schema import ReverseRuleCase
+from app.services.review_perspective import is_generic_review_role, normalize_review_perspective
 
 
 DEFAULT_PERSIST_DIR = "storage/reverse_rule_kb"
@@ -162,6 +163,44 @@ def _search_records(
     review_role: str | None = None,
 ) -> list[dict[str, Any]]:
     query_vector = embed_text(query)
+    filter_tiers = [
+        {
+            "review_module": review_module,
+            "contract_type": contract_type,
+            "review_role": review_role,
+        },
+        {
+            "review_module": review_module,
+            "contract_type": contract_type,
+            "review_role": None,
+        },
+        {
+            "review_module": review_module,
+            "contract_type": None,
+            "review_role": None,
+        },
+        {
+            "review_module": None,
+            "contract_type": None,
+            "review_role": None,
+        },
+    ]
+
+    for filters in filter_tiers:
+        scored = _score_matching_records(records, query_vector=query_vector, **filters)
+        if scored:
+            return scored[:k]
+    return []
+
+
+def _score_matching_records(
+    records: list[dict[str, Any]],
+    *,
+    query_vector: list[float],
+    review_module: str | None,
+    contract_type: str | None,
+    review_role: str | None,
+) -> list[dict[str, Any]]:
     scored: list[dict[str, Any]] = []
     for record in records:
         if not _metadata_matches(
@@ -179,7 +218,7 @@ def _search_records(
         )
 
     scored.sort(key=lambda item: item["score"], reverse=True)
-    return scored[:k]
+    return scored
 
 
 def _metadata_matches(
@@ -193,8 +232,16 @@ def _metadata_matches(
         return False
     if contract_type and contract_type not in metadata.get("contract_type", []):
         return False
-    if review_role and review_role not in metadata.get("review_role", []):
-        return False
+    if review_role and not is_generic_review_role(review_role):
+        metadata_roles = metadata.get("review_role", [])
+        if review_role not in metadata_roles:
+            review_perspective = normalize_review_perspective(review_role)
+            metadata_perspectives = {
+                normalize_review_perspective(role)
+                for role in metadata_roles
+            }
+            if review_perspective not in metadata_perspectives:
+                return False
     return True
 
 

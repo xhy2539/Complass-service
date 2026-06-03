@@ -371,3 +371,59 @@ def test_parses_minimax_array_response_and_adds_trace():
     assert parsed.rules[0].risk_name == "付款期限过长"
     assert parsed.rules[0].contract_type == "服务合同"
     assert parsed.rules[0].traces[0].pair_id == "pair-1"
+def test_substantive_diff_generates_low_confidence_rule_without_retrieved_cases(monkeypatch):
+    import app.chains.reverse_rule_graph as graph
+
+    monkeypatch.setattr(graph, "retrieve_cases_for_diff", lambda *args, **kwargs: [])
+
+    result = run_reverse_rule_extraction(
+        [
+            {
+                "pair_id": "pair-no-case",
+                "before_text": "乙方应在合同签署后向甲方提交项目计划。",
+                "after_text": "乙方应在合同签署后5日内向甲方提交项目计划，逾期应每日按合同总价1%承担违约金。",
+                "contract_type": "服务合同",
+                "review_role": "通用",
+            }
+        ]
+    )
+
+    assert len(result["rules"]) == 1
+    rule = result["rules"][0]
+    assert rule["review_perspective"] == "通用"
+    assert rule["traces"][0]["pair_id"] == "pair-no-case"
+    assert rule["traces"][0]["confidence"] < 0.6
+    assert "无高匹配知识库案例" in rule["traces"][0]["user_intent"]
+def test_parses_llm_granular_review_perspective_as_rule_library_perspective():
+    text = """
+{
+  "rules": [
+    {
+      "risk_name": "管辖法院不利",
+      "contract_type": "采购合同",
+      "review_perspective": "起诉方",
+      "review_module": "管辖法院",
+      "check_point": "检查管辖法院是否便利。",
+      "trigger_condition": "约定由对方所在地法院管辖时触发。",
+      "default_risk_level": "中",
+      "suggestion_template": "建议约定审核方所在地法院管辖。",
+      "example_clause": "由乙方所在地人民法院管辖。",
+      "traces": [
+        {
+          "pair_id": "pair-1",
+          "evidence_before": "提交上海仲裁委员会仲裁。",
+          "evidence_after": "由乙方所在地人民法院管辖。",
+          "diff_summary": "争议解决路径发生变化。",
+          "user_intent": "提高维权便利性。",
+          "confidence": 0.72
+        }
+      ]
+    }
+  ]
+}
+"""
+
+    parsed = _parse_rule_batch_from_text(text)
+
+    assert len(parsed.rules) == 1
+    assert parsed.rules[0].review_perspective == "甲方"

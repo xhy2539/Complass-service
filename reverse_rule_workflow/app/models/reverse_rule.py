@@ -77,6 +77,7 @@ class RuleExtractionTrace(BaseModel):
 
 class CandidateRuleForDB(BaseModel):
     contract_type: str
+    review_perspective: Literal["甲方", "乙方", "通用"] = "通用"
     review_module: str
     risk_name: str = Field(max_length=100)
     check_point: str

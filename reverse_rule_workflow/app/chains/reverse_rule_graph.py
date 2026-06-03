@@ -27,6 +27,7 @@ from app.services.base_info import (
 from app.services.diff_service import diff_contract_pair
 from app.services.query_builder import build_retrieval_queries
 from app.services.rule_merger import merge_candidate_rules
+from app.services.review_perspective import normalize_review_perspective
 
 RuleGenerator = Callable[
     [ContractPair, DiffResult, list[RetrievedCase], ContractBaseInfo | None],
@@ -301,16 +302,20 @@ def _generate_rules_with_stub(
     base_info: ContractBaseInfo | None = None,
 ) -> list[CandidateRuleForDB]:
     rules: list[CandidateRuleForDB] = []
-    cases_by_module = {case.review_module: case for case in retrieved_cases}
+    cases_by_module: dict[str, RetrievedCase] = {}
+    for case in retrieved_cases:
+        cases_by_module.setdefault(case.review_module, case)
     for clause in diff_result.changed_clauses:
         if not clause.is_substantive:
             continue
         case = cases_by_module.get(clause.review_module)
         if case is None:
+            rules.append(_rule_from_diff_without_case(pair, clause))
             continue
         rules.append(
             CandidateRuleForDB(
                 contract_type=pair.contract_type or _first_text(case.contract_type) or "通用合同",
+                review_perspective=normalize_review_perspective(pair.review_role),
                 review_module=case.review_module,
                 risk_name=case.risk_name,
                 check_point=case.check_point,
@@ -547,6 +552,11 @@ def _coerce_llm_rule_data(
     if isinstance(data.get("contract_type"), list):
         data["contract_type"] = data["contract_type"][0] if data["contract_type"] else "通用合同"
     data.setdefault("contract_type", pair.contract_type if pair else "通用合同")
+    data["review_perspective"] = normalize_review_perspective(
+        data.get("review_perspective")
+        or data.get("review_role")
+        or (pair.review_role if pair else None)
+    )
     data.setdefault("default_risk_level", "中")
 
     if not data.get("traces") and pair is not None and diff_result is not None:
@@ -571,6 +581,37 @@ def _best_trace_clause(diff_result: DiffResult, review_module: str | None):
         if review_module and clause.review_module == review_module:
             return clause
     return substantive[0] if substantive else None
+
+
+def _rule_from_diff_without_case(pair: ContractPair, clause: Any) -> CandidateRuleForDB:
+    review_module = clause.review_module or "通用条款"
+    return CandidateRuleForDB(
+        contract_type=pair.contract_type or "通用合同",
+        review_perspective=normalize_review_perspective(pair.review_role),
+        review_module=review_module,
+        risk_name=_risk_name_from_module(review_module),
+        check_point=f"检查{review_module}是否存在与本次修改相同或类似的风险安排。",
+        trigger_condition=f"{review_module}条款出现类似修改前表述，可能影响权利义务、责任承担或履约确定性时触发。",
+        default_risk_level="中",
+        suggestion_template=f"建议参考本次修改后的表达，明确{review_module}中的关键条件、责任边界和履行要求。",
+        example_clause=clause.before,
+        traces=[
+            RuleExtractionTrace(
+                pair_id=pair.pair_id,
+                evidence_before=clause.before,
+                evidence_after=clause.after,
+                diff_summary=clause.diff_summary,
+                user_intent="无高匹配知识库案例，仅基于修改行为反推候选审核规则，需人工确认后入库。",
+                confidence=0.52,
+            )
+        ],
+    )
+
+
+def _risk_name_from_module(review_module: str) -> str:
+    if review_module.endswith("条款"):
+        return f"{review_module}约定不明确"
+    return f"{review_module}安排不当"
 
 
 def _message_content_to_text(response: Any) -> str:

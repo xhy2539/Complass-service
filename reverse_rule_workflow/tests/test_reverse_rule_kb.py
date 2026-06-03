@@ -192,3 +192,41 @@ def test_filters_by_review_module_contract_type_and_review_role(monkeypatch):
     assert all(result["review_module"] == "审计权" for result in results)
     assert all("服务合同" in result["contract_type"] for result in results)
     assert all("被审计方" in result["review_role"] for result in results)
+def test_generic_review_role_does_not_block_jurisdiction_case(monkeypatch):
+    from app.kb.loader import load_reverse_rule_cases
+    from app.kb import retriever
+
+    persist_dir = _test_storage_dir("test_reverse_rule_kb_generic_role")
+    retriever.build_reverse_rule_kb(load_reverse_rule_cases(), persist_dir)
+    monkeypatch.setattr(retriever, "DEFAULT_PERSIST_DIR", str(persist_dir))
+
+    results = retriever.retrieve_reverse_rule_cases(
+        "争议管辖由乙方所在地法院调整为甲方所在地有管辖权的人民法院",
+        review_module="管辖法院",
+        contract_type="采购合同",
+        review_role="通用",
+        k=5,
+    )
+
+    assert results
+    assert results[0]["case_id"] == "jurisdiction_001"
+
+
+def test_granular_review_role_matches_normalized_perspective(monkeypatch):
+    from app.kb.loader import load_reverse_rule_cases
+    from app.kb import retriever
+
+    persist_dir = _test_storage_dir("test_reverse_rule_kb_normalized_role")
+    retriever.build_reverse_rule_kb(load_reverse_rule_cases(), persist_dir)
+    monkeypatch.setattr(retriever, "DEFAULT_PERSIST_DIR", str(persist_dir))
+
+    results = retriever.retrieve_reverse_rule_cases(
+        "审计权范围从无限制现场审计改为提前通知并限于合同相关资料",
+        review_module="审计权",
+        contract_type="服务合同",
+        review_role="服务方",
+        k=5,
+    )
+
+    assert results
+    assert results[0]["case_id"] == "audit_001"
