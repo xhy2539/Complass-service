@@ -28,6 +28,8 @@ RUN cd /rw_src \
 COPY reverse_rule_workflow/data /app/data/
 COPY reverse_rule_workflow/storage /app/storage/
 
+ENV PYTHONPATH="/rw_src:${PYTHONPATH}"
+
 EXPOSE 8080
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
