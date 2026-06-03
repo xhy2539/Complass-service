@@ -346,15 +346,13 @@ def _try_generate_with_structured_llm(
         return None
 
     config = _resolve_chat_model_config()
-    # MiniMax does not reliably support structured output, skip straight to JSON text
-    if config.get("provider") == "minimax":
-        return None
     try:
         llm = ChatOpenAI(
             model=config["model"],
             temperature=0,
             api_key=config["api_key"],
             base_url=config["base_url"],
+            extra_body={"reasoning_split": True} if config.get("provider") == "minimax" else None,
         )
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -397,9 +395,8 @@ def _try_generate_with_structured_llm(
         )
     except Exception:
         _logger = logging.getLogger(__name__)
-        _logger.info(
-            "[ReverseRule LLM] structured output failed, trying JSON text"
-        )
+        _logger.info("[ReverseRule LLM] structured output failed, trying JSON text")
+        raw_response = _try_generate_minimax_json_text(
             llm=llm if "llm" in locals() else None,
             prompt=prompt if "prompt" in locals() else None,
             pair=pair,
