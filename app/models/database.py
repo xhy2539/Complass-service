@@ -33,6 +33,8 @@ class User(Base):
     phone = Column(String(20), nullable=False, default="")
     nickname = Column(String(100), nullable=False)
     hashed_password = Column(String(255), nullable=False)
+    feishu_open_id = Column(String(64), nullable=True, index=True)
+    feishu_union_id = Column(String(64), nullable=True, index=True)
 
     # 用户状态
     is_active = Column(Boolean, default=True, nullable=False)
@@ -805,95 +807,22 @@ class AcceptedSuggestion(Base):
     position = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+    optimized_version = relationship("OptimizedContractVersion")
+    risk_point = relationship("RiskPoint")
 
-# --- 规则逆向解析 ---
 
-
-class ReverseRuleTask(Base):
-    """规则逆向解析任务。"""
-
-    __tablename__ = "reverse_rule_tasks"
+class FeishuPendingAction(Base):
+    __tablename__ = "feishu_pending_actions"
 
     id = Column(String(36), primary_key=True)
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
-    task_name = Column(String(200), nullable=False)
-    contract_type = Column(String(50), nullable=True)
-    review_role = Column(String(20), nullable=True)
-    status = Column(String(20), nullable=False, default="pending")
-    progress = Column(Integer, default=0)
-    contract_pairs_json = Column(JSON, nullable=True)
-    stats_json = Column(JSON, nullable=True)
-    result_json = Column(JSON, nullable=True)
-    error_message = Column(Text, nullable=True)
+    open_id = Column(String(64), nullable=False, index=True)
+    chat_id = Column(String(64), nullable=True)
+    message_id = Column(String(64), nullable=True)
+    files_json = Column(JSON, nullable=False)
+    status = Column(String(20), default="pending", nullable=False)
+    selected_op = Column(String(20), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
-
-    candidates = relationship(
-        "ReverseRuleCandidate", back_populates="task", cascade="all, delete-orphan"
-    )
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "task_name": self.task_name,
-            "contract_type": self.contract_type,
-            "review_role": self.review_role,
-            "status": self.status,
-            "progress": self.progress,
-            "pair_count": len(self.contract_pairs_json or []),
-            "stats": self.stats_json,
-            "error_message": self.error_message,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-        }
-
-
-class ReverseRuleCandidate(Base):
-    """规则逆向解析候选规则，可从多组合同对比中提取。"""
-
-    __tablename__ = "reverse_rule_candidates"
-
-    id = Column(String(36), primary_key=True)
-    task_id = Column(
-        String(36), ForeignKey("reverse_rule_tasks.id"), nullable=False, index=True
-    )
-    contract_type = Column(String(50), nullable=False, default="通用")
-    review_module = Column(String(50), nullable=False)
-    risk_name = Column(String(100), nullable=False)
-    check_point = Column(Text, nullable=True)
-    trigger_condition = Column(Text, nullable=True)
-    default_risk_level = Column(String(20), nullable=False)
-    suggestion_template = Column(Text, nullable=True)
-    example_clause = Column(Text, nullable=True)
-    review_perspective = Column(String(20), nullable=False, default="通用")
-    traces_json = Column(JSON, nullable=True)
-    source_pair_index = Column(Integer, nullable=True)
-    decision = Column(String(20), nullable=False, default="pending")
-    confidence = Column(Integer, nullable=True)
-    imported_rule_id = Column(String(36), ForeignKey("review_rules.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    task = relationship("ReverseRuleTask", back_populates="candidates")
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "task_id": self.task_id,
-            "contract_type": self.contract_type,
-            "review_module": self.review_module,
-            "risk_name": self.risk_name,
-            "check_point": self.check_point,
-            "trigger_condition": self.trigger_condition,
-            "default_risk_level": self.default_risk_level,
-            "suggestion_template": self.suggestion_template,
-            "example_clause": self.example_clause,
-            "review_perspective": self.review_perspective,
-            "traces": self.traces_json,
-            "source_pair_index": self.source_pair_index,
-            "decision": self.decision,
-            "confidence": self.confidence,
-            "imported_rule_id": self.imported_rule_id,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }

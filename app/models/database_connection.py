@@ -74,6 +74,8 @@ def _ensure_schema_updates() -> None:
     _add_column_if_missing("users", "phone", "VARCHAR(20) NOT NULL DEFAULT ''")
     _add_column_if_missing("users", "token_quota", "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing("users", "token_used", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing("users", "feishu_open_id", "VARCHAR(64)")
+    _add_column_if_missing("users", "feishu_union_id", "VARCHAR(64)")
     _add_column_if_missing("review_tasks", "token_cost", "INTEGER")
     _add_column_if_missing("comparison_tasks", "token_cost", "INTEGER")
     _add_column_if_missing("review_tasks", "use_coze", "BOOLEAN NOT NULL DEFAULT TRUE")
@@ -117,3 +119,8 @@ def get_db_context() -> Generator[Session, None, None]:
         raise
     finally:
         db.close()
+
+
+def get_db_session() -> Session:
+    """获取数据库会话（用于非依赖注入场景）。"""
+    return SessionLocal()

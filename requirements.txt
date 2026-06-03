@@ -12,6 +12,8 @@ pdfplumber==0.11.4
 # HTTP client (for Coze API)
 httpx==0.28.1
 
+redis==5.0.6
+
 # Database
 sqlalchemy==2.0.36
 pymysql==1.1.1
@@ -22,9 +24,3 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 email-validator==2.1.0
-
-# HTTP client (sync)
-requests==2.32.3
-
-# Redis
-redis==5.2.1
