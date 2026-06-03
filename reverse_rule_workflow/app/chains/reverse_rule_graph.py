@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -91,9 +92,65 @@ def generate_rules_for_pair(
 ) -> list[CandidateRuleForDB]:
     if _has_llm_credentials():
         structured_rules = _try_generate_with_structured_llm(pair, diff_result, retrieved_cases, base_info)
-        if structured_rules is not None:
+        if structured_rules is not None and len(structured_rules) > 0:
             return structured_rules
+        # structured output failed or returned empty — try plain JSON text
+        text_rules = _try_generate_rules_with_text_llm(pair, diff_result, retrieved_cases, base_info)
+        if text_rules is not None and len(text_rules) > 0:
+            return text_rules
     return _generate_rules_with_stub(pair, diff_result, retrieved_cases, base_info)
+
+
+def _try_generate_rules_with_text_llm(
+    pair: ContractPair,
+    diff_result: DiffResult,
+    retrieved_cases: list[RetrievedCase],
+    base_info: ContractBaseInfo | None = None,
+) -> list[CandidateRuleForDB] | None:
+    """用普通 JSON 文本方式调用 LLM，适用于不支持 structured output 的模型。"""
+    config = _resolve_chat_model_config()
+    try:
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(
+            model=config["model"],
+            temperature=0,
+            api_key=config["api_key"],
+            base_url=config["base_url"],
+        )
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", RULE_GENERATION_PROMPT),
+                (
+                    "human",
+                    "\n".join(
+                        [
+                            "请根据以下结构化输入生成候选规则。",
+                            "只输出 JSON，不要 Markdown，不要代码块，不要 <think> 内容。",
+                            'JSON 顶层格式必须是 {"rules": [...]}。',
+                            "合同组: {pair_json}",
+                            "合同基础信息: {base_info_json}",
+                            "差异结果: {diff_json}",
+                            "知识库案例: {cases_json}",
+                        ]
+                    ),
+                ),
+            ]
+        )
+        raw = _try_generate_minimax_json_text(
+            llm=llm,
+            prompt=prompt,
+            pair=pair,
+            diff_result=diff_result,
+            retrieved_cases=retrieved_cases,
+            base_info=base_info,
+        )
+        if raw is None:
+            return None
+        return _parse_rule_batch_from_text(raw).rules
+    except Exception:
+        return None
 
 
 def validate_candidate_rules(
@@ -289,13 +346,15 @@ def _try_generate_with_structured_llm(
         return None
 
     config = _resolve_chat_model_config()
+    # MiniMax does not reliably support structured output, skip straight to JSON text
+    if config.get("provider") == "minimax":
+        return None
     try:
         llm = ChatOpenAI(
             model=config["model"],
             temperature=0,
             api_key=config["api_key"],
             base_url=config["base_url"],
-            extra_body={"reasoning_split": True} if config.get("provider") == "minimax" else None,
         )
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -331,8 +390,16 @@ def _try_generate_with_structured_llm(
                 ),
             }
         )
+        _logger = logging.getLogger(__name__)
+        _logger.info(
+            "[ReverseRule LLM] structured output returned %d rules",
+            len(response.rules) if response else 0,
+        )
     except Exception:
-        raw_response = _try_generate_minimax_json_text(
+        _logger = logging.getLogger(__name__)
+        _logger.info(
+            "[ReverseRule LLM] structured output failed, trying JSON text"
+        )
             llm=llm if "llm" in locals() else None,
             prompt=prompt if "prompt" in locals() else None,
             pair=pair,
