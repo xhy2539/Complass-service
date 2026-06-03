@@ -39,3 +39,9 @@ junit*.xml
 *.sqlite
 *.sqlite3
 
+.env
+mysql_data/
+redis_data/
+logs/
+task_uploads/
+

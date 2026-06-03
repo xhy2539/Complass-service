@@ -14,8 +14,14 @@ class ComplassServiceSettings(BaseSettings):
     service_name: str = "complass-service"
     app_env: str = "local"
     database_url: str = (
-        "mysql+pymysql://complass:123456@mysql:3306/complass?charset=utf8mb4"
+        "mysql+pymysql://root:password@localhost:3306/complass?charset=utf8mb4"
     )
+    frontend_url: str = ""
+    feishu_app_id: str = ""
+    feishu_app_secret: str = ""
+    feishu_encrypt_key: str = ""
+    feishu_verification_token: str = ""
+    feishu_oauth_redirect_uri: str = ""
     coze_api_base_url: str = "https://api.coze.cn"
     coze_access_token: str = ""
     coze_api_token: str = ""
@@ -26,22 +32,13 @@ class ComplassServiceSettings(BaseSettings):
     coze_upload_timeout_seconds: float = 120.0
     max_upload_size_mb: int = 20
     task_upload_dir: str = "/app/task_uploads"
-
-    # CORS 允许的来源列表，逗号分隔
     cors_allow_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
-
-    # 管理员邮箱
     admin_email: str = "1121799294@qq.com"
-
-    # Redis
     redis_host: str = "redis"
     redis_port: int = 6379
     redis_db: int = 0
-
-    # 前端地址
-    frontend_base_url: str = "http://82.156.132.43"
-
-    # JWT 配置
+    frontend_base_url: str = ""
+    frontend_feishu_auth_path: str = "/auth/feishu"
     jwt_secret_key: str = (
         "your-super-secret-key-change-in-production"  # 生产环境必须更换
     )
