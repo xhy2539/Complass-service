@@ -833,6 +833,7 @@ class ReverseRuleTask(Base):
     )
 
     def to_dict(self) -> dict:
+        stats = self.stats_json or {}
         return {
             "id": self.id,
             "task_name": self.task_name,
@@ -842,6 +843,10 @@ class ReverseRuleTask(Base):
             "progress": self.progress,
             "pair_count": len(self.contract_pairs_json or []),
             "stats": self.stats_json,
+            "candidate_rule_count": stats.get("total", 0),
+            "included_count": stats.get("included", 0),
+            "ignored_count": stats.get("ignored", 0),
+            "pending_count": stats.get("pending", 0),
             "error_message": self.error_message,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

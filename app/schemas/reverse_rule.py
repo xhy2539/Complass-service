@@ -43,6 +43,10 @@ class TaskResponse(BaseModel):
     progress: int = 0
     pair_count: int = 0
     stats: Optional[dict] = None
+    candidate_rule_count: int = 0
+    included_count: int = 0
+    ignored_count: int = 0
+    pending_count: int = 0
     error_message: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
