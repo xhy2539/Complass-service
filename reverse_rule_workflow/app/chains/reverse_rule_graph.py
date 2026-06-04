@@ -21,6 +21,7 @@ from app.models.reverse_rule import (
 from app.prompts import RULE_GENERATION_PROMPT
 from app.services.base_info import (
     identify_base_info_for_pair,
+    identify_base_info_with_heuristics,
     merge_base_info_with_input,
     pair_with_base_info,
 )
@@ -270,10 +271,16 @@ def _validate_input_node(state: ReverseRuleState) -> ReverseRuleState:
 
 def _identify_base_info_node(state: ReverseRuleState) -> ReverseRuleState:
     base_infos = [
-        merge_base_info_with_input(pair, identify_base_info_for_pair(pair))
+        _resolve_base_info_for_pair(pair)
         for pair in state["pairs"]
     ]
     return {"base_infos": base_infos}
+
+
+def _resolve_base_info_for_pair(pair: ContractPair) -> ContractBaseInfo:
+    if pair.contract_type and pair.review_role:
+        return merge_base_info_with_input(pair, identify_base_info_with_heuristics(pair))
+    return merge_base_info_with_input(pair, identify_base_info_for_pair(pair))
 
 
 def _diff_pairs_node(state: ReverseRuleState) -> ReverseRuleState:

@@ -7,6 +7,7 @@ import pytest
 
 from app.chains.reverse_rule_graph import (
     _has_llm_credentials,
+    _identify_base_info_node,
     _parse_rule_batch_from_text,
     _resolve_chat_model_config,
     build_reverse_rule_graph,
@@ -159,6 +160,62 @@ def test_base_info_identifier_infers_purchase_installation_context(monkeypatch):
     assert base_info.party_a_identity == "采购方"
     assert base_info.party_b_identity == "供应及安装调试方"
     assert 0 <= base_info.confidence <= 1
+
+
+def test_explicit_generic_metadata_skips_base_info_identification(monkeypatch):
+    import app.chains.reverse_rule_graph as graph
+
+    calls: list[str] = []
+
+    def fail_if_called(pair: ContractPair):
+        calls.append(pair.pair_id)
+        raise AssertionError("base info identification should not run")
+
+    monkeypatch.setattr(graph, "identify_base_info_for_pair", fail_if_called)
+    pair = ContractPair(
+        pair_id="pair-explicit-generic",
+        before_text="甲方应在验收后90日内向乙方付款。",
+        after_text="甲方应在验收并收到发票后30日内向乙方付款。",
+        contract_type="通用",
+        review_role="通用",
+    )
+
+    result = _identify_base_info_node({"pairs": [pair]})
+
+    assert calls == []
+    assert result["base_infos"][0].contract_type == "通用"
+    assert result["base_infos"][0].review_role == "通用"
+
+
+def test_missing_metadata_still_uses_base_info_identification(monkeypatch):
+    import app.chains.reverse_rule_graph as graph
+
+    calls: list[str] = []
+
+    def identify(pair: ContractPair):
+        calls.append(pair.pair_id)
+        return graph.ContractBaseInfo(
+            pair_id=pair.pair_id,
+            contract_type="采购合同",
+            review_role="乙方",
+            contract_subject="设备采购",
+            party_a_identity="采购方",
+            party_b_identity="供应方",
+            confidence=0.8,
+        )
+
+    monkeypatch.setattr(graph, "identify_base_info_for_pair", identify)
+    pair = ContractPair(
+        pair_id="pair-auto",
+        before_text="甲方采购设备。",
+        after_text="甲方采购设备并要求乙方安装调试。",
+    )
+
+    result = _identify_base_info_node({"pairs": [pair]})
+
+    assert calls == ["pair-auto"]
+    assert result["base_infos"][0].contract_type == "采购合同"
+    assert result["base_infos"][0].review_role == "乙方"
 
 
 def test_graph_contains_parallel_base_info_and_diff_nodes():
