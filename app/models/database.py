@@ -888,6 +888,9 @@ class ReverseRuleCandidate(Base):
             "example_clause": self.example_clause,
             "review_perspective": self.review_perspective,
             "traces": self.traces_json,
+            "source_pair": f"pair-{self.source_pair_index}"
+            if self.source_pair_index is not None
+            else None,
             "source_pair_index": self.source_pair_index,
             "decision": self.decision,
             "confidence": self.confidence,

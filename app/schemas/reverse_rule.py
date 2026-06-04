@@ -21,6 +21,7 @@ class CandidateRuleResponse(BaseModel):
     example_clause: Optional[str] = None
     review_perspective: str = "通用"
     traces: Optional[list[dict]] = None
+    source_pair: Optional[str] = None
     source_pair_index: Optional[int] = None
     decision: str = "pending"
     confidence: Optional[int] = None
@@ -69,7 +70,7 @@ class CandidateListResponse(BaseModel):
 class DecideRequest(BaseModel):
     """候选规则决策请求。"""
 
-    candidate_ids: list[str]
+    candidate_ids: list[str] = []
     decision: str = Field(..., description="included / ignored / pending")
 
 
