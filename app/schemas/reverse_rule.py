@@ -90,5 +90,5 @@ class ImportResponse(BaseModel):
     """入库结果。"""
 
     imported: int
-    ignored: int
     imported_rules: list[dict] = []
+    ignored: int = 0
