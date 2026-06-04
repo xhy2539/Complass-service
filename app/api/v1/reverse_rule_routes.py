@@ -127,7 +127,7 @@ async def create_reverse_rule_task(
         task_name=task_name,
         contract_type=contract_type,
         review_role=review_role,
-        status="draft",
+        status="parsing",
         contract_pairs_json=contract_pairs,
         progress=0,
     )
@@ -342,7 +342,7 @@ def retry_task(
     if task.status != "failed":
         raise HTTPException(status_code=400, detail="只能重试失败的任务")
 
-    task.status = "draft"
+    task.status = "parsing"
     task.progress = 0
     task.error_message = None
     db.commit()
