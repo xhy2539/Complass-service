@@ -1,0 +1,26 @@
+{
+  "case_id": "other_medium_risky",
+  "expected_contract_type": "其他",
+  "expected_total_rules_optional": null,
+  "expected_counts": {
+    "agreeCount": null,
+    "highlevelriskCount": null,
+    "mediumlevelriskCount": null,
+    "lowlevelriskCount": null
+  },
+  "rule_expectations": [
+    {
+      "rule_code": "",
+      "expected_present": true,
+      "risk_gold": "medium",
+      "risk_label_gold": "中风险",
+      "action_type_gold": "replace",
+      "key_aliases": ["争议解决不明确", "管辖法院不明确"],
+      "content_mode_gold": "quote",
+      "content_anchor_optional": "争议解决法院未明确",
+      "must_not_invent_numbers": true,
+      "advice_expectation": "争议解决",
+      "replace_text_expectation": "required"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "case_id": "cooperation_long_defective",
+  "title": "合作协议-长-故意缺陷",
+  "contract_type_expected": "合作协议",
+  "length_bucket": "long",
+  "quality_bucket": "defective",
+  "input_text": "战略合作协议。甲乙双方拟在市场拓展、联合投标、客户资源共享和联合交付方面建立长期合作。协议未明确合作期限结束后的退出机制，仅写届时协商处理。客户线索共享后由谁主导跟进、如何保护原始客户、如何防止绕开合作方均未明确。收益分配写为按项目实际情况另行协商。合作中形成的方案文档、演示材料、软件脚本和客户数据的知识产权及使用范围均未写明。联合交付服务的验收标准、交付地点和履行期限只写根据项目情况确定。争议解决条款只写依法处理。解除协议后的资料返还、商业秘密销毁、未结费用和历史项目责任承担均未明确。",
+  "tags": ["cooperation", "defective", "long", "customer_protection", "ip", "termination", "delivery_location", "timeline", "dispute"]
+}

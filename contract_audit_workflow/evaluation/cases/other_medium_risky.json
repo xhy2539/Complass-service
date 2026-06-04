@@ -1,0 +1,9 @@
+{
+  "case_id": "other_medium_risky",
+  "title": "其他-中-问题",
+  "contract_type_expected": "其他",
+  "length_bucket": "medium",
+  "quality_bucket": "risky",
+  "input_text": "活动场地使用协议。甲方提供会展场地给乙方举办展览。协议写明使用日期和基础费用，但安全责任、临时设备损坏赔偿、保证金退还条件和争议解决法院未明确。若活动延期或取消，双方友好协商处理。协议不属于采购合同、服务开发合同或合作协议。",
+  "tags": ["other", "risky", "medium", "site_use", "liability", "dispute"]
+}
