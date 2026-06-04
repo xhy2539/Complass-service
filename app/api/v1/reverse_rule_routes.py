@@ -47,22 +47,25 @@ def _get_user_task(db: Session, task_id: str, user_id: str) -> ReverseRuleTask:
     import logging
 
     _log = logging.getLogger(__name__)
+    # debug: count all
+    all_count = db.query(ReverseRuleTask).count()
+    _log.info("[ReverseRule] total tasks in DB: %d", all_count)
     task = (
         db.query(ReverseRuleTask)
         .filter(ReverseRuleTask.id == task_id, ReverseRuleTask.user_id == user_id)
         .first()
     )
     if not task:
-        # debug: check if task exists at all
         any_task = (
             db.query(ReverseRuleTask).filter(ReverseRuleTask.id == task_id).first()
         )
         _log.warning(
-            "[ReverseRule] task=%s exists=%s req_user=%s db_user=%s",
+            "[ReverseRule] task=%s exists=%s req_user=%s db_user=%s total_tasks=%d",
             task_id,
             bool(any_task),
             user_id,
             any_task.user_id if any_task else "N/A",
+            all_count,
         )
         raise HTTPException(status_code=404, detail="任务不存在")
     return task
