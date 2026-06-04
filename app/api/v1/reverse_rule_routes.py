@@ -127,7 +127,7 @@ async def create_reverse_rule_task(
         task_name=task_name,
         contract_type=contract_type,
         review_role=review_role,
-        status="pending",
+        status="draft",
         contract_pairs_json=contract_pairs,
         progress=0,
     )
@@ -148,7 +148,7 @@ async def _read_upload_text(file: UploadFile) -> str:
 
 
 def recover_pending_reverse_rule_tasks() -> int:
-    """启动时将处于 processing 的逆向解析任务标记为 failed。"""
+    """启动时将处于 parsing 的逆向解析任务标记为 failed。"""
     from sqlalchemy.orm import Session as _Session
 
     from app.models.database import ReverseRuleTask as _Task
@@ -158,7 +158,7 @@ def recover_pending_reverse_rule_tasks() -> int:
     try:
         count = (
             db.query(_Task)
-            .filter(_Task.status == "processing")
+            .filter(_Task.status == "parsing")
             .update(
                 {"status": "failed", "error_message": "服务重启，任务中断"},
                 synchronize_session=False,
@@ -342,7 +342,7 @@ def retry_task(
     if task.status != "failed":
         raise HTTPException(status_code=400, detail="只能重试失败的任务")
 
-    task.status = "pending"
+    task.status = "draft"
     task.progress = 0
     task.error_message = None
     db.commit()

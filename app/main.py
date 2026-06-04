@@ -13,6 +13,7 @@ from app.api.v1.audit_rules_api import audit_rules_router
 from app.api.v1.contract_comparison_routes import recover_pending_comparison_tasks
 from app.api.v1.contract_review_api import contract_review_api_router
 from app.api.v1.contract_review_routes import recover_pending_review_tasks
+from app.api.v1.reverse_rule_routes import recover_pending_reverse_rule_tasks
 from app.api.v1.reverse_rule_routes import reverse_rule_candidate_router
 from app.api.v1.reverse_rule_routes import reverse_rule_router
 from app.core.complass_service_settings import get_complass_service_settings
@@ -36,11 +37,13 @@ async def lifespan(app: FastAPI):
     init_db()  # 启动时创建所有表
     review_count = recover_pending_review_tasks()
     comparison_count = recover_pending_comparison_tasks()
-    if review_count or comparison_count:
+    reverse_rule_count = recover_pending_reverse_rule_tasks()
+    if review_count or comparison_count or reverse_rule_count:
         logging.info(
-            "Recovered pending tasks: reviews=%s, comparisons=%s",
+            "Recovered pending tasks: reviews=%s, comparisons=%s, reverse_rules=%s",
             review_count,
             comparison_count,
+            reverse_rule_count,
         )
     yield
 

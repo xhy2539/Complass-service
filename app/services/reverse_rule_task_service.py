@@ -32,7 +32,7 @@ def process_task_async(task_id: str) -> None:
         if not task:
             return
 
-        task.status = "processing"
+        task.status = "parsing"
         task.progress = 10
         db.commit()
 
@@ -92,7 +92,7 @@ def process_task_async(task_id: str) -> None:
             )
             db.add(candidate)
 
-        task.status = "completed"
+        task.status = "pending_confirm"
         task.progress = 100
         task.stats_json = stats
         db.commit()
@@ -157,11 +157,13 @@ def import_candidates(db: Session, task_id: str, candidate_ids: list[str]) -> di
             if c.decision != "included":
                 ignored_rules.append(c.to_dict())
 
-    # 更新任务统计
+    # 更新任务统计和状态
     task = db.query(ReverseRuleTask).filter(ReverseRuleTask.id == task_id).first()
     pair_count = len(task.contract_pairs_json or []) if task else 0
-    if task and task.stats_json:
-        task.stats_json = {**task.stats_json, "imported_included": len(imported)}
+    if task:
+        if task.stats_json:
+            task.stats_json = {**task.stats_json, "imported_included": len(imported)}
+        task.status = "completed"
 
     db.commit()
     return {
