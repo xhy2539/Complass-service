@@ -129,7 +129,7 @@ def _try_generate_rules_with_text_llm(
                         [
                             "请根据以下结构化输入生成候选规则。",
                             "只输出 JSON，不要 Markdown，不要代码块，不要 <think> 内容。",
-                            'JSON 顶层格式必须是 {"rules": [...]}。',
+                            'JSON 顶层格式必须是 {{"rules": [...]}}。',
                             "合同组: {pair_json}",
                             "合同基础信息: {base_info_json}",
                             "差异结果: {diff_json}",
