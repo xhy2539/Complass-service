@@ -126,7 +126,7 @@ def import_candidates(db: Session, task_id: str, candidate_ids: list[str]) -> di
     )
 
     imported = []
-    ignored = 0
+    ignored_rules = []
     for c in candidates:
         rule = ReviewRule(
             id=_uuid(),
@@ -153,15 +153,24 @@ def import_candidates(db: Session, task_id: str, candidate_ids: list[str]) -> di
             .filter(ReverseRuleCandidate.id.in_(candidate_ids))
             .all()
         )
-        ignored = len([c for c in all_requested if c.decision != "included"])
+        for c in all_requested:
+            if c.decision != "included":
+                ignored_rules.append(c.to_dict())
 
     # 更新任务统计
     task = db.query(ReverseRuleTask).filter(ReverseRuleTask.id == task_id).first()
+    pair_count = len(task.contract_pairs_json or []) if task else 0
     if task and task.stats_json:
         task.stats_json = {**task.stats_json, "imported_included": len(imported)}
 
     db.commit()
-    return {"imported": len(imported), "ignored": ignored, "imported_rules": imported}
+    return {
+        "imported": len(imported),
+        "ignored": len(ignored_rules),
+        "imported_rules": imported,
+        "ignored_rules": ignored_rules,
+        "pair_count": pair_count,
+    }
 
 
 def _generate_rule_code(candidate: ReverseRuleCandidate) -> str:

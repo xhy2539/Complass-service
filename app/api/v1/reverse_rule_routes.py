@@ -23,7 +23,6 @@ from app.models.database_connection import get_db
 from app.schemas.reverse_rule import CandidateListResponse
 from app.schemas.reverse_rule import CandidateRuleResponse
 from app.schemas.reverse_rule import DecideRequest
-from app.schemas.reverse_rule import DecideResponse
 from app.schemas.reverse_rule import ImportRequest
 from app.schemas.reverse_rule import ImportResponse
 from app.schemas.reverse_rule import TaskListResponse
@@ -263,28 +262,24 @@ def list_candidates(
 
 
 @reverse_rule_router.patch(
-    "/{task_id}/candidates/decision", response_model=DecideResponse
+    "/{task_id}/candidates/decision", response_model=CandidateListResponse
 )
 def decide_candidates(
     task_id: str,
     request: DecideRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> DecideResponse:
+) -> CandidateListResponse:
     """批量设置候选规则决策状态。"""
     task = _get_user_task(db, task_id, current_user.id)
 
     if request.decision not in ("included", "ignored", "pending"):
         raise HTTPException(status_code=400, detail="无效的 decision 值")
 
-    updated = (
-        db.query(ReverseRuleCandidate)
-        .filter(
-            ReverseRuleCandidate.task_id == task_id,
-            ReverseRuleCandidate.id.in_(request.candidate_ids),
-        )
-        .update({"decision": request.decision}, synchronize_session=False)
-    )
+    db.query(ReverseRuleCandidate).filter(
+        ReverseRuleCandidate.task_id == task_id,
+        ReverseRuleCandidate.id.in_(request.candidate_ids),
+    ).update({"decision": request.decision}, synchronize_session=False)
     db.commit()
 
     # 刷新任务统计
@@ -301,7 +296,12 @@ def decide_candidates(
     }
     db.commit()
 
-    return DecideResponse(updated=updated, decision=request.decision)
+    return CandidateListResponse(
+        task=TaskResponse.model_validate(task.to_dict()),
+        candidates=[
+            CandidateRuleResponse.model_validate(c.to_dict()) for c in candidates
+        ],
+    )
 
 
 # --- 确认入库 ---
@@ -317,7 +317,14 @@ def import_to_rule_library(
     """将已纳入的候选规则写入正式规则库。"""
     _get_user_task(db, task_id, current_user.id)
     result = import_candidates(db, task_id, request.candidate_ids)
-    return ImportResponse(**result)
+    return ImportResponse(
+        task_id=task_id,
+        included_count=result["imported"],
+        ignored_count=result["ignored"],
+        imported_rules=result["imported_rules"],
+        ignored_rules=result["ignored_rules"],
+        pair_count=result["pair_count"],
+    )
 
 
 # --- 重试 ---

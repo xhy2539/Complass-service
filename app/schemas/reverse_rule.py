@@ -89,6 +89,9 @@ class ImportRequest(BaseModel):
 class ImportResponse(BaseModel):
     """入库结果。"""
 
-    imported: int
+    task_id: str
+    included_count: int
     imported_rules: list[dict] = []
-    ignored: int = 0
+    ignored_count: int = 0
+    ignored_rules: list[dict] = []
+    pair_count: int = 0
