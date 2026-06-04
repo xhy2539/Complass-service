@@ -7,6 +7,27 @@ from typing import Optional
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
+from docx.text.paragraph import Paragraph
+
+
+def _replace_para_text(para: Paragraph, new_texts: list[str], index: int) -> int:
+    """用 new_texts[index] 替换段落的文本，保留格式。返回下一个索引。"""
+    runs = para.runs
+    if index < len(new_texts):
+        new_text = new_texts[index]
+        if runs:
+            for run in runs[1:]:
+                run.text = ""
+            runs[0].text = new_text
+        else:
+            para.text = new_text
+        return index + 1
+    else:
+        for run in runs:
+            run.text = ""
+        if not runs:
+            para.text = ""
+        return index
 
 
 class DocumentExporter:
@@ -59,46 +80,34 @@ class DocumentExporter:
     ) -> BytesIO:
         """基于原始 DOCX 模板替换文本，保留原有格式。
 
-        将 new_text 按换行拆分后，逐段落替换到原始文档中。
-        段落内的格式（字体、加粗、斜体、缩进等）会被保留。
-        表格内的文本也会被替换。
+        按文档元素顺序（正文段落、表格、页眉页脚）逐段落替换文本。
+        段落级格式（字体、加粗、斜体、字号、缩进、对齐）全部保留。
+        表格结构、边框、合并单元格等格式保留。
         """
         doc = Document(original_file_path)
+        # 用 \n\n 分隔段落，与前端 docTextFromReview 保持一致
+        new_paragraphs = (
+            new_text.split("\n\n") if "\n\n" in new_text else new_text.split("\n")
+        )
+        para_index = 0
+        # --- 1. 只替换正文段落，表格保持原样 ---
+        # 前端 docTextFromReview 只包含正文段落，不含表格文本
+        for para in doc.paragraphs:
+            para_index = _replace_para_text(para, new_paragraphs, para_index)
 
-        new_paragraphs = [p for p in new_text.split("\n")]
+        # --- 2. 处理页眉页脚 ---
+        for section in doc.sections:
+            for header_para in section.header.paragraphs:
+                para_index = _replace_para_text(header_para, new_paragraphs, para_index)
+            for footer_para in section.footer.paragraphs:
+                para_index = _replace_para_text(footer_para, new_paragraphs, para_index)
 
-        # 收集文档中所有可编辑的段落（包括表格内的）
-        all_paragraphs = list(doc.paragraphs)
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    all_paragraphs.extend(cell.paragraphs)
-
-        # 逐段落替换文本
-        for i, para in enumerate(all_paragraphs):
-            if i < len(new_paragraphs):
-                new_para_text = new_paragraphs[i]
-                runs = para.runs
-                if runs:
-                    # 保留第一个 run，其余删除
-                    for run in runs[1:]:
-                        run.text = ""
-                    runs[0].text = new_para_text
-                else:
-                    # 没有 run 的段落，添加文本
-                    para.text = new_para_text
-            else:
-                # 新文本比原段落少，清空多余段落
-                for run in para.runs:
-                    run.text = ""
-                if not para.runs:
-                    para.text = ""
-
-        # 如果新文本比原段落多，追加到文档末尾
-        if len(new_paragraphs) > len(all_paragraphs):
-            extra = new_paragraphs[len(all_paragraphs) :]
+        # --- 3. 如果新文本比原段落多，追加到文档末尾 ---
+        if para_index < len(new_paragraphs):
+            extra = new_paragraphs[para_index:]
             for text in extra:
-                doc.add_paragraph(text)
+                if text.strip():
+                    doc.add_paragraph(text)
 
         buffer = BytesIO()
         doc.save(buffer)
