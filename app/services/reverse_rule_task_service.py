@@ -8,6 +8,8 @@ from app.models.database import ReverseRuleCandidate
 from app.models.database import ReverseRuleTask
 from app.models.database import ReviewRule
 from app.models.database_connection import SessionLocal
+from app.services.sanitization_service import restore_text_from_mapping
+from app.services.sanitization_service import sanitize_contract_text
 
 logger = logging.getLogger(__name__)
 
@@ -43,15 +45,33 @@ def process_task_async(task_id: str) -> None:
             db.commit()
             return
 
+        # 脱敏：替换公司名、电话、邮箱等敏感信息
+        all_mappings: list[dict] = []
+        sanitized_pairs = []
+        for p in pairs:
+            before_san = sanitize_contract_text(p["before_text"])
+            after_san = sanitize_contract_text(p["after_text"])
+            all_mappings.extend(before_san.mappings)
+            all_mappings.extend(after_san.mappings)
+            sanitized_pairs.append(
+                {
+                    "pair_name": p.get("pair_name", ""),
+                    "before_text": before_san.sanitized_text,
+                    "after_text": after_san.sanitized_text,
+                }
+            )
+        task.sanitization_mapping_json = all_mappings
+        db.commit()
+
         inputs = [
             {
-                "pair_id": p.get("pair_name", f"pair_{i}"),
+                "pair_id": p["pair_name"],
                 "before_text": p["before_text"],
                 "after_text": p["after_text"],
                 "contract_type": task.contract_type,
                 "review_role": task.review_role,
             }
-            for i, p in enumerate(pairs)
+            for p in sanitized_pairs
         ]
 
         task.progress = 30
@@ -64,7 +84,7 @@ def process_task_async(task_id: str) -> None:
         task.progress = 80
         db.commit()
 
-        # 写入候选规则
+        # 写入候选规则（还原脱敏证据文本）
         rules = result.get("rules", [])
         stats = {
             "total": len(rules),
@@ -73,6 +93,16 @@ def process_task_async(task_id: str) -> None:
             "pending": len(rules),
         }
         for i, rule in enumerate(rules):
+            traces = rule.get("traces", [])
+            for trace in traces:
+                if trace.get("evidence_before"):
+                    trace["evidence_before"] = restore_text_from_mapping(
+                        trace["evidence_before"], all_mappings
+                    )
+                if trace.get("evidence_after"):
+                    trace["evidence_after"] = restore_text_from_mapping(
+                        trace["evidence_after"], all_mappings
+                    )
             candidate = ReverseRuleCandidate(
                 id=_uuid(),
                 task_id=task_id,
@@ -83,9 +113,11 @@ def process_task_async(task_id: str) -> None:
                 trigger_condition=rule.get("trigger_condition", ""),
                 default_risk_level=rule.get("default_risk_level", "中"),
                 suggestion_template=rule.get("suggestion_template", ""),
-                example_clause=rule.get("example_clause", ""),
+                example_clause=restore_text_from_mapping(
+                    rule.get("example_clause", ""), all_mappings
+                ),
                 review_perspective=rule.get("review_perspective", "通用"),
-                traces_json=rule.get("traces", []),
+                traces_json=traces,
                 source_pair_index=i,
                 decision="pending",
                 confidence=rule.get("confidence"),

@@ -82,6 +82,7 @@ def _ensure_schema_updates() -> None:
     _add_column_if_missing(
         "comparison_tasks", "enhance", "BOOLEAN NOT NULL DEFAULT TRUE"
     )
+    _add_column_if_missing("reverse_rule_tasks", "sanitization_mapping_json", "JSON")
 
 
 def _add_column_if_missing(table_name: str, column_name: str, ddl: str) -> None:

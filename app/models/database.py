@@ -823,6 +823,7 @@ class ReverseRuleTask(Base):
     contract_pairs_json = Column(JSON, nullable=True)
     stats_json = Column(JSON, nullable=True)
     result_json = Column(JSON, nullable=True)
+    sanitization_mapping_json = Column(JSON, nullable=True)
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
