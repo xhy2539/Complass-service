@@ -370,7 +370,7 @@ _EXPORT_HEADERS = [
 ]
 
 
-@reverse_rule_router.get("/{task_id}/export")
+@reverse_rule_router.post("/{task_id}/export")
 def export_candidates(
     task_id: str,
     current_user: User = Depends(get_current_user),
