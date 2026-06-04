@@ -9,7 +9,6 @@ from pydantic import ValidationError
 
 from app.kb.schema import ReverseRuleCase
 
-
 DEFAULT_CASES_PATH = Path("data/reverse_rule_cases.jsonl")
 CONTENT_FIELDS = [
     "review_module",
@@ -39,7 +38,9 @@ def load_reverse_rule_cases(
                 payload = json.loads(raw)
                 cases.append(ReverseRuleCase.model_validate(payload))
             except (json.JSONDecodeError, ValidationError, ValueError) as exc:
-                raise ValueError(f"Invalid reverse rule case at line {line_number}: {exc}") from exc
+                raise ValueError(
+                    f"Invalid reverse rule case at line {line_number}: {exc}"
+                ) from exc
 
     return cases
 

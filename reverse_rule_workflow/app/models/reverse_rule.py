@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
-
+from pydantic import BaseModel
+from pydantic import Field
+from pydantic import field_validator
 
 RiskLevel = Literal["低", "中", "高"]
 ChangeType = Literal["新增", "删除", "修改"]

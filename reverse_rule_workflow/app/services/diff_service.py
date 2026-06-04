@@ -2,8 +2,9 @@ import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from app.models.reverse_rule import ContractPair, DiffClause, DiffResult
-
+from app.models.reverse_rule import ContractPair
+from app.models.reverse_rule import DiffClause
+from app.models.reverse_rule import DiffResult
 
 SUBSTANTIVE_KEYWORDS = (
     "日",
@@ -39,7 +40,9 @@ LEADING_NUMBERING_PATTERN = re.compile(
     r"^\s*(?:第?[一二三四五六七八九十百]+[章节条款项、.)）]|[（(]?[0-9]+[).、）])\s*"
 )
 MAJOR_CLAUSE_PATTERN = re.compile(r"^\s*第([一二三四五六七八九十百]+)条\s*(.*)$")
-SUB_CLAUSE_PATTERN = re.compile(r"^\s*([一二三四五六七八九十百]+[.．、]\d+|[0-9]+(?:\.[0-9]+)?)\s*(.*)$")
+SUB_CLAUSE_PATTERN = re.compile(
+    r"^\s*([一二三四五六七八九十百]+[.．、]\d+|[0-9]+(?:\.[0-9]+)?)\s*(.*)$"
+)
 
 
 @dataclass(frozen=True)
@@ -65,7 +68,11 @@ def diff_contract_pair(pair: ContractPair) -> DiffResult:
 
     review_module = _infer_review_module(before, after)
     is_substantive = _is_substantive_change(before, after)
-    reason = "涉及权利义务、期限、金额、责任或条件变化" if is_substantive else "仅疑似措辞或格式润色"
+    reason = (
+        "涉及权利义务、期限、金额、责任或条件变化"
+        if is_substantive
+        else "仅疑似措辞或格式润色"
+    )
     diff_summary = _summarize_diff(review_module, before, after, is_substantive)
 
     return DiffResult(
@@ -95,7 +102,9 @@ def split_contract_clauses(text: str) -> list[ClauseSegment]:
         nonlocal current_id, current_title, current_lines
         if current_id and current_lines:
             body = "\n".join(current_lines).strip()
-            segments.append(ClauseSegment(current_id, current_title or current_id, body))
+            segments.append(
+                ClauseSegment(current_id, current_title or current_id, body)
+            )
         current_id = None
         current_title = ""
         current_lines = []
@@ -152,7 +161,9 @@ def _diff_clause_segments(
                 change_type=_change_type(before_segment, after_segment),
                 before=before_text,
                 after=after_text,
-                diff_summary=_summarize_diff(review_module, before_text, after_text, is_substantive),
+                diff_summary=_summarize_diff(
+                    review_module, before_text, after_text, is_substantive
+                ),
                 is_substantive=True,
                 substantive_reason=reason,
             )
@@ -193,15 +204,15 @@ def _best_unmatched_segment(
     used_after_ids: set[str],
 ) -> ClauseSegment | None:
     candidates = [
-        segment
-        for segment in after_segments
-        if segment.clause_id not in used_after_ids
+        segment for segment in after_segments if segment.clause_id not in used_after_ids
     ]
     if not candidates:
         return None
     best = max(
         candidates,
-        key=lambda segment: SequenceMatcher(None, before_segment.text, segment.text).ratio(),
+        key=lambda segment: SequenceMatcher(
+            None, before_segment.text, segment.text
+        ).ratio(),
     )
     score = SequenceMatcher(None, before_segment.text, best.text).ratio()
     return best if score >= 0.55 else None
@@ -220,7 +231,17 @@ def _change_type(
 
 def _infer_review_module(before: str, after: str) -> str:
     text = before + after
-    if any(word in text for word in ("所有权", "风险转移", "灭失", "毁损", "到货签收", "验收合格并完成交接")):
+    if any(
+        word in text
+        for word in (
+            "所有权",
+            "风险转移",
+            "灭失",
+            "毁损",
+            "到货签收",
+            "验收合格并完成交接",
+        )
+    ):
         return "所有权/风险转移"
     if any(word in text for word in ("合同标的", "设备数量", "新增", "试点")):
         return "合同标的"
@@ -232,15 +253,28 @@ def _infer_review_module(before: str, after: str) -> str:
         return "保密条款"
     if "解除" in text or "终止" in text:
         return "解除条款"
-    if any(word in text for word in ("责任上限", "赔偿总额", "赔偿上限", "已收取费用总额", "合同总价为上限")):
+    if any(
+        word in text
+        for word in (
+            "责任上限",
+            "赔偿总额",
+            "赔偿上限",
+            "已收取费用总额",
+            "合同总价为上限",
+        )
+    ):
         return "赔偿责任上限"
     if any(word in text for word in ("违约", "赔偿", "损失", "律师费")):
         if "上限" in text and "赔偿" in text:
             return "赔偿责任上限"
         return "违约责任"
-    if any(word in text for word in ("付款", "支付", "款项", "付款申请", "支付相应款项")):
+    if any(
+        word in text for word in ("付款", "支付", "款项", "付款申请", "支付相应款项")
+    ):
         return "付款条款"
-    if "发票" in text and not any(word in text for word in ("90日", "30日", "付款期限", "支付期限")):
+    if "发票" in text and not any(
+        word in text for word in ("90日", "30日", "付款期限", "支付期限")
+    ):
         return "发票开具"
     if any(word in text for word in ("付款", "支付", "费用", "发票", "服务费", "款项")):
         return "付款条款"
@@ -250,9 +284,14 @@ def _infer_review_module(before: str, after: str) -> str:
 def _is_substantive_change(before: str, after: str) -> bool:
     if not any(keyword in before + after for keyword in SUBSTANTIVE_KEYWORDS):
         return False
-    if any(keyword in before + after for keyword in ("管辖", "法院", "仲裁", "责任上限", "赔偿总额")):
+    if any(
+        keyword in before + after
+        for keyword in ("管辖", "法院", "仲裁", "责任上限", "赔偿总额")
+    ):
         return _normalize_polish(before) != _normalize_polish(after)
-    ratio = SequenceMatcher(None, _normalize_polish(before), _normalize_polish(after)).ratio()
+    ratio = SequenceMatcher(
+        None, _normalize_polish(before), _normalize_polish(after)
+    ).ratio()
     if ratio > 0.82 and not _has_number_change(before, after):
         return False
     return True
@@ -300,7 +339,9 @@ def _strip_leading_numbering(text: str) -> str:
         current = updated.strip()
 
 
-def _summarize_diff(review_module: str, before: str, after: str, is_substantive: bool) -> str:
+def _summarize_diff(
+    review_module: str, before: str, after: str, is_substantive: bool
+) -> str:
     if is_substantive:
         return f"{review_module}发生实质性修改：由“{before}”调整为“{after}”。"
     return f"{review_module}疑似仅发生措辞润色：由“{before}”调整为“{after}”。"

@@ -10,7 +10,9 @@ def build_retrieval_queries(
     for clause in diff_result.changed_clauses:
         if not clause.is_substantive:
             continue
-        grouped.setdefault(clause.review_module, []).append(_change_direction(clause.before, clause.after))
+        grouped.setdefault(clause.review_module, []).append(
+            _change_direction(clause.before, clause.after)
+        )
 
     queries: list[str] = []
     for review_module, directions in grouped.items():

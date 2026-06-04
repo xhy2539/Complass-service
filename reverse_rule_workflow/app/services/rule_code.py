@@ -1,8 +1,8 @@
 from datetime import datetime
 from uuid import uuid4
 
-from app.models.reverse_rule import CandidateRuleForDB, RuleRecord
-
+from app.models.reverse_rule import CandidateRuleForDB
+from app.models.reverse_rule import RuleRecord
 
 MODULE_PREFIX = {
     "付款条款": "PAY",

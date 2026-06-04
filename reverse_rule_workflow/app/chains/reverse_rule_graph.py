@@ -3,32 +3,32 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Callable, TypedDict
+from typing import Any
+from typing import Callable
+from typing import TypedDict
 
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import END
+from langgraph.graph import START
+from langgraph.graph import StateGraph
 
 from app.kb.fallback import fallback_reverse_rule_cases
-from app.models.reverse_rule import (
-    CandidateRuleForDB,
-    CandidateRuleBatch,
-    ContractBaseInfo,
-    ContractPair,
-    DiffResult,
-    FinalRuleResult,
-    RetrievedCase,
-    RuleExtractionTrace,
-)
+from app.models.reverse_rule import CandidateRuleBatch
+from app.models.reverse_rule import CandidateRuleForDB
+from app.models.reverse_rule import ContractBaseInfo
+from app.models.reverse_rule import ContractPair
+from app.models.reverse_rule import DiffResult
+from app.models.reverse_rule import FinalRuleResult
+from app.models.reverse_rule import RetrievedCase
+from app.models.reverse_rule import RuleExtractionTrace
 from app.prompts import RULE_GENERATION_PROMPT
-from app.services.base_info import (
-    identify_base_info_for_pair,
-    identify_base_info_with_heuristics,
-    merge_base_info_with_input,
-    pair_with_base_info,
-)
+from app.services.base_info import identify_base_info_for_pair
+from app.services.base_info import identify_base_info_with_heuristics
+from app.services.base_info import merge_base_info_with_input
+from app.services.base_info import pair_with_base_info
 from app.services.diff_service import diff_contract_pair
 from app.services.query_builder import build_retrieval_queries
-from app.services.rule_merger import merge_candidate_rules
 from app.services.review_perspective import normalize_review_perspective
+from app.services.rule_merger import merge_candidate_rules
 
 RuleGenerator = Callable[
     [ContractPair, DiffResult, list[RetrievedCase], ContractBaseInfo | None],
@@ -70,9 +70,13 @@ def retrieve_cases_for_diff(
         import app.kb.retriever as retriever
 
         retrieved: list[RetrievedCase] = []
-        substantive_clauses = [clause for clause in diff_result.changed_clauses if clause.is_substantive]
+        substantive_clauses = [
+            clause for clause in diff_result.changed_clauses if clause.is_substantive
+        ]
         for index, query in enumerate(queries):
-            clause = substantive_clauses[index] if index < len(substantive_clauses) else None
+            clause = (
+                substantive_clauses[index] if index < len(substantive_clauses) else None
+            )
             raw_results = retriever.retrieve_reverse_rule_cases(
                 query,
                 review_module=clause.review_module if clause else None,
@@ -93,11 +97,15 @@ def generate_rules_for_pair(
     base_info: ContractBaseInfo | None = None,
 ) -> list[CandidateRuleForDB]:
     if _has_llm_credentials():
-        structured_rules = _try_generate_with_structured_llm(pair, diff_result, retrieved_cases, base_info)
+        structured_rules = _try_generate_with_structured_llm(
+            pair, diff_result, retrieved_cases, base_info
+        )
         if structured_rules is not None and len(structured_rules) > 0:
             return structured_rules
         # structured output failed or returned empty — try plain JSON text
-        text_rules = _try_generate_rules_with_text_llm(pair, diff_result, retrieved_cases, base_info)
+        text_rules = _try_generate_rules_with_text_llm(
+            pair, diff_result, retrieved_cases, base_info
+        )
         if text_rules is not None and len(text_rules) > 0:
             return text_rules
     return _generate_rules_with_stub(pair, diff_result, retrieved_cases, base_info)
@@ -155,7 +163,8 @@ def _try_generate_rules_with_text_llm(
         rules = _parse_rule_batch_from_text(raw).rules
         _logger.info(
             "[ReverseRule LLM] JSON text parsed %d rules, raw text length=%d",
-            len(rules), len(raw),
+            len(rules),
+            len(raw),
         )
         return rules
     except Exception as e:
@@ -171,7 +180,11 @@ def validate_candidate_rules(
     valid_rules: list[CandidateRuleForDB] = []
     for rule in rules:
         try:
-            data = rule.model_dump() if isinstance(rule, CandidateRuleForDB) else dict(rule)
+            data = (
+                rule.model_dump()
+                if isinstance(rule, CandidateRuleForDB)
+                else dict(rule)
+            )
             data["contract_type"] = data.get("contract_type") or "通用合同"
             if data.get("default_risk_level") not in {"低", "中", "高"}:
                 data["default_risk_level"] = "中"
@@ -194,7 +207,9 @@ def process_pair(
     rule_generator: RuleGenerator | None = None,
 ) -> list[CandidateRuleForDB]:
     enriched_pair = pair_with_base_info(pair, base_info)
-    queries = build_retrieval_queries(diff_result, enriched_pair.contract_type, enriched_pair.review_role)
+    queries = build_retrieval_queries(
+        diff_result, enriched_pair.contract_type, enriched_pair.review_role
+    )
     retrieved_cases = retrieve_cases_for_diff(
         queries,
         diff_result,
@@ -213,7 +228,9 @@ def process_all_pairs(
     rule_generator: RuleGenerator | None = None,
 ) -> list[CandidateRuleForDB]:
     rules: list[CandidateRuleForDB] = []
-    diffs_by_pair_id = {diff_result.pair_id: diff_result for diff_result in diff_results}
+    diffs_by_pair_id = {
+        diff_result.pair_id: diff_result for diff_result in diff_results
+    }
     base_infos_by_pair_id = {base_info.pair_id: base_info for base_info in base_infos}
     for pair in pairs:
         diff_result = diffs_by_pair_id.get(pair.pair_id)
@@ -270,16 +287,15 @@ def _validate_input_node(state: ReverseRuleState) -> ReverseRuleState:
 
 
 def _identify_base_info_node(state: ReverseRuleState) -> ReverseRuleState:
-    base_infos = [
-        _resolve_base_info_for_pair(pair)
-        for pair in state["pairs"]
-    ]
+    base_infos = [_resolve_base_info_for_pair(pair) for pair in state["pairs"]]
     return {"base_infos": base_infos}
 
 
 def _resolve_base_info_for_pair(pair: ContractPair) -> ContractBaseInfo:
     if pair.contract_type and pair.review_role:
-        return merge_base_info_with_input(pair, identify_base_info_with_heuristics(pair))
+        return merge_base_info_with_input(
+            pair, identify_base_info_with_heuristics(pair)
+        )
     return merge_base_info_with_input(pair, identify_base_info_for_pair(pair))
 
 
@@ -330,7 +346,9 @@ def _generate_rules_with_stub(
             continue
         rules.append(
             CandidateRuleForDB(
-                contract_type=pair.contract_type or _first_text(case.contract_type) or "通用合同",
+                contract_type=pair.contract_type
+                or _first_text(case.contract_type)
+                or "通用合同",
                 review_perspective=normalize_review_perspective(pair.review_role),
                 review_module=case.review_module,
                 risk_name=case.risk_name,
@@ -373,7 +391,9 @@ def _try_generate_with_structured_llm(
             temperature=0,
             api_key=config["api_key"],
             base_url=config["base_url"],
-            extra_body={"reasoning_split": True} if config.get("provider") == "minimax" else None,
+            extra_body={"reasoning_split": True}
+            if config.get("provider") == "minimax"
+            else None,
         )
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -454,7 +474,9 @@ def _resolve_chat_model_config() -> dict[str, str | None]:
     if provider == "minimax":
         return {
             "provider": "minimax",
-            "model": os.getenv("LLM_MODEL_NAME") or os.getenv("MINIMAX_MODEL_NAME") or "MiniMax-M2.7",
+            "model": os.getenv("LLM_MODEL_NAME")
+            or os.getenv("MINIMAX_MODEL_NAME")
+            or "MiniMax-M2.7",
             "api_key": os.getenv("MINIMAX_API_KEY") or os.getenv("OPENAI_API_KEY"),
             "base_url": (
                 os.getenv("MINIMAX_BASE_URL")
@@ -516,7 +538,8 @@ def _try_generate_minimax_json_text(
         _logger = logging.getLogger(__name__)
         _logger.info(
             "[ReverseRule LLM] raw response length=%d, preview=%s",
-            len(text), text[:200],
+            len(text),
+            text[:200],
         )
         return text
     except Exception as e:
@@ -531,7 +554,9 @@ def _parse_rule_batch_from_text(
     diff_result: DiffResult | None = None,
 ) -> CandidateRuleBatch:
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-    fenced = re.search(r"```(?:json)?\s*(.*?)```", cleaned, flags=re.DOTALL | re.IGNORECASE)
+    fenced = re.search(
+        r"```(?:json)?\s*(.*?)```", cleaned, flags=re.DOTALL | re.IGNORECASE
+    )
     if fenced:
         cleaned = fenced.group(1).strip()
     else:
@@ -574,7 +599,9 @@ def _coerce_llm_rule_data(
     if "risk_name" not in data and "rule_name" in data:
         data["risk_name"] = data["rule_name"]
     if isinstance(data.get("contract_type"), list):
-        data["contract_type"] = data["contract_type"][0] if data["contract_type"] else "通用合同"
+        data["contract_type"] = (
+            data["contract_type"][0] if data["contract_type"] else "通用合同"
+        )
     data.setdefault("contract_type", pair.contract_type if pair else "通用合同")
     data["review_perspective"] = normalize_review_perspective(
         data.get("review_perspective")
@@ -600,7 +627,9 @@ def _coerce_llm_rule_data(
 
 
 def _best_trace_clause(diff_result: DiffResult, review_module: str | None):
-    substantive = [clause for clause in diff_result.changed_clauses if clause.is_substantive]
+    substantive = [
+        clause for clause in diff_result.changed_clauses if clause.is_substantive
+    ]
     for clause in substantive:
         if review_module and clause.review_module == review_module:
             return clause

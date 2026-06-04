@@ -2,10 +2,9 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any
 
-from app.models.reverse_rule import ContractBaseInfo, ContractPair
-
+from app.models.reverse_rule import ContractBaseInfo
+from app.models.reverse_rule import ContractPair
 
 BASE_INFO_PROMPT = """
 你是合同基础信息识别助手。
@@ -28,9 +27,13 @@ def identify_base_info_with_heuristics(pair: ContractPair) -> ContractBaseInfo:
     contract_type, type_score = _infer_contract_type(text)
     review_role, role_score = _infer_review_role(text)
     subject, subject_score = _infer_contract_subject(text)
-    party_a_identity, party_b_identity, party_score = _infer_party_identities(text, contract_type)
+    party_a_identity, party_b_identity, party_score = _infer_party_identities(
+        text, contract_type
+    )
 
-    confidence = min(0.92, max(0.2, 0.2 + type_score + role_score + subject_score + party_score))
+    confidence = min(
+        0.92, max(0.2, 0.2 + type_score + role_score + subject_score + party_score)
+    )
     return ContractBaseInfo(
         pair_id=pair.pair_id,
         contract_type=contract_type,
@@ -42,7 +45,9 @@ def identify_base_info_with_heuristics(pair: ContractPair) -> ContractBaseInfo:
     )
 
 
-def merge_base_info_with_input(pair: ContractPair, base_info: ContractBaseInfo) -> ContractBaseInfo:
+def merge_base_info_with_input(
+    pair: ContractPair, base_info: ContractBaseInfo
+) -> ContractBaseInfo:
     return base_info.model_copy(
         update={
             "contract_type": pair.contract_type or base_info.contract_type,
@@ -51,7 +56,9 @@ def merge_base_info_with_input(pair: ContractPair, base_info: ContractBaseInfo) 
     )
 
 
-def pair_with_base_info(pair: ContractPair, base_info: ContractBaseInfo | None) -> ContractPair:
+def pair_with_base_info(
+    pair: ContractPair, base_info: ContractBaseInfo | None
+) -> ContractPair:
     if base_info is None:
         return pair
     return pair.model_copy(
@@ -101,7 +108,9 @@ def _infer_contract_subject(text: str) -> tuple[str, float]:
     return "通用合同事项", 0.03
 
 
-def _infer_party_identities(text: str, contract_type: str) -> tuple[str | None, str | None, float]:
+def _infer_party_identities(
+    text: str, contract_type: str
+) -> tuple[str | None, str | None, float]:
     if (
         re.search(r"甲方[^。；;\n]*采购", text)
         and re.search(r"乙方[^。；;\n]*(供应|供货)", text)
@@ -147,7 +156,9 @@ def _try_identify_with_structured_llm(pair: ContractPair) -> ContractBaseInfo | 
             temperature=0,
             api_key=config["api_key"],
             base_url=config["base_url"],
-            extra_body={"reasoning_split": True} if config.get("provider") == "minimax" else None,
+            extra_body={"reasoning_split": True}
+            if config.get("provider") == "minimax"
+            else None,
         )
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -177,7 +188,9 @@ def _resolve_chat_model_config() -> dict[str, str | None]:
     if provider == "minimax":
         return {
             "provider": "minimax",
-            "model": os.getenv("LLM_MODEL_NAME") or os.getenv("MINIMAX_MODEL_NAME") or "MiniMax-M2.7",
+            "model": os.getenv("LLM_MODEL_NAME")
+            or os.getenv("MINIMAX_MODEL_NAME")
+            or "MiniMax-M2.7",
             "api_key": os.getenv("MINIMAX_API_KEY") or os.getenv("OPENAI_API_KEY"),
             "base_url": (
                 os.getenv("MINIMAX_BASE_URL")

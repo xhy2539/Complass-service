@@ -10,12 +10,14 @@ from typing import Any
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict
+from pydantic import Field
 
-from app.kb.loader import case_to_document, load_reverse_rule_cases
+from app.kb.loader import case_to_document
+from app.kb.loader import load_reverse_rule_cases
 from app.kb.schema import ReverseRuleCase
-from app.services.review_perspective import is_generic_review_role, normalize_review_perspective
-
+from app.services.review_perspective import is_generic_review_role
+from app.services.review_perspective import normalize_review_perspective
 
 DEFAULT_PERSIST_DIR = "storage/reverse_rule_kb"
 INDEX_FILE_NAME = "index.json"
@@ -34,7 +36,9 @@ class ReverseRuleCaseRetriever(BaseRetriever):
     k: int = 3
     records: list[dict[str, Any]] = Field(default_factory=list)
 
-    def __init__(self, persist_dir: str = DEFAULT_PERSIST_DIR, k: int = 3, **kwargs: Any) -> None:
+    def __init__(
+        self, persist_dir: str = DEFAULT_PERSIST_DIR, k: int = 3, **kwargs: Any
+    ) -> None:
         records = _load_index(Path(persist_dir))["records"]
         super().__init__(persist_dir=str(persist_dir), k=k, records=records, **kwargs)
 
@@ -49,7 +53,9 @@ class ReverseRuleCaseRetriever(BaseRetriever):
         for result in results:
             metadata = dict(result["metadata"])
             metadata["score"] = result["score"]
-            documents.append(Document(page_content=result["page_content"], metadata=metadata))
+            documents.append(
+                Document(page_content=result["page_content"], metadata=metadata)
+            )
         return documents
 
 
@@ -145,7 +151,10 @@ def _tokens(text: str) -> list[str]:
     tokens.extend(WORD_PATTERN.findall(text.lower()))
     for size in (1, 2, 3, 4):
         if len(normalized) >= size:
-            tokens.extend(normalized[index : index + size] for index in range(len(normalized) - size + 1))
+            tokens.extend(
+                normalized[index : index + size]
+                for index in range(len(normalized) - size + 1)
+            )
     return tokens
 
 
@@ -237,8 +246,7 @@ def _metadata_matches(
         if review_role not in metadata_roles:
             review_perspective = normalize_review_perspective(review_role)
             metadata_perspectives = {
-                normalize_review_perspective(role)
-                for role in metadata_roles
+                normalize_review_perspective(role) for role in metadata_roles
             }
             if review_perspective not in metadata_perspectives:
                 return False
@@ -248,7 +256,10 @@ def _metadata_matches(
 def _load_index(persist_dir: Path) -> dict[str, Any]:
     index_path = persist_dir / INDEX_FILE_NAME
     if not index_path.exists():
-        if persist_dir == Path(DEFAULT_PERSIST_DIR) and Path("data/reverse_rule_cases.jsonl").exists():
+        if (
+            persist_dir == Path(DEFAULT_PERSIST_DIR)
+            and Path("data/reverse_rule_cases.jsonl").exists()
+        ):
             build_reverse_rule_kb(persist_dir=persist_dir)
         else:
             raise FileNotFoundError(f"Reverse rule KB index not found: {index_path}")

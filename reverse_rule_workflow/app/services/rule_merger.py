@@ -10,5 +10,7 @@ def merge_candidate_rules(rules: list[CandidateRuleForDB]) -> list[CandidateRule
             continue
         existing = merged[key]
         seen = {trace.pair_id for trace in existing.traces}
-        existing.traces.extend(trace for trace in rule.traces if trace.pair_id not in seen)
+        existing.traces.extend(
+            trace for trace in rule.traces if trace.pair_id not in seen
+        )
     return list(merged.values())

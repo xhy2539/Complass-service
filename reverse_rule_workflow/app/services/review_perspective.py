@@ -1,9 +1,16 @@
 from typing import Literal
 
-
 ReviewPerspective = Literal["甲方", "乙方", "通用"]
 
-GENERIC_REVIEW_ROLES = {"", "通用", "通用角色", "中立", "双方", "合同相对方", "合同签署方"}
+GENERIC_REVIEW_ROLES = {
+    "",
+    "通用",
+    "通用角色",
+    "中立",
+    "双方",
+    "合同相对方",
+    "合同签署方",
+}
 
 PARTY_A_ROLES = {
     "甲方",

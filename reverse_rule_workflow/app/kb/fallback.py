@@ -1,7 +1,10 @@
-from app.models.reverse_rule import DiffResult, RetrievedCase
+from app.models.reverse_rule import DiffResult
+from app.models.reverse_rule import RetrievedCase
 
 
-def fallback_reverse_rule_cases(diff_result: DiffResult, k: int = 3) -> list[RetrievedCase]:
+def fallback_reverse_rule_cases(
+    diff_result: DiffResult, k: int = 3
+) -> list[RetrievedCase]:
     cases: list[RetrievedCase] = []
     for clause in diff_result.changed_clauses:
         if not clause.is_substantive:
