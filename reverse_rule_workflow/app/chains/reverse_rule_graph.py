@@ -147,10 +147,19 @@ def _try_generate_rules_with_text_llm(
             retrieved_cases=retrieved_cases,
             base_info=base_info,
         )
+        _logger = logging.getLogger(__name__)
         if raw is None:
+            _logger.warning("[ReverseRule LLM] JSON text generation returned None")
             return None
-        return _parse_rule_batch_from_text(raw).rules
-    except Exception:
+        rules = _parse_rule_batch_from_text(raw).rules
+        _logger.info(
+            "[ReverseRule LLM] JSON text parsed %d rules, raw text length=%d",
+            len(rules), len(raw),
+        )
+        return rules
+    except Exception as e:
+        _logger = logging.getLogger(__name__)
+        _logger.warning("[ReverseRule LLM] JSON text failed: %s", str(e)[:200])
         return None
 
 
@@ -496,9 +505,17 @@ def _try_generate_minimax_json_text(
                 ),
             }
         )
-    except Exception:
+        text = _message_content_to_text(response)
+        _logger = logging.getLogger(__name__)
+        _logger.info(
+            "[ReverseRule LLM] raw response length=%d, preview=%s",
+            len(text), text[:200],
+        )
+        return text
+    except Exception as e:
+        _logger = logging.getLogger(__name__)
+        _logger.warning("[ReverseRule LLM] minimax json text failed: %s", str(e)[:200])
         return None
-    return _message_content_to_text(response)
 
 
 def _parse_rule_batch_from_text(
