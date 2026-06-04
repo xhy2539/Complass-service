@@ -5,6 +5,7 @@ import logging
 import re
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 from typing import Optional
 
@@ -782,10 +783,33 @@ async def export_review_document(
     base_name = original_name.rsplit(".", 1)[0] if original_name else "合同"
     export_file_name = request.file_name or f"{base_name}_修改版.docx"
 
-    # 导出为 docx
-    docx_buffer = DocumentExporter.export_text_to_docx(
-        text=request.final_text, file_name=export_file_name, title=base_name
-    )
+    # 导出为 docx（有原始文件则保留格式）
+    if task.file_path and task.file_type == "docx":
+        original_path = task.file_path
+        if not Path(original_path).is_absolute():
+            from app.core.complass_service_settings import get_complass_service_settings
+
+            original_path = str(
+                Path(get_complass_service_settings().task_upload_dir) / original_path
+            )
+        if Path(original_path).exists():
+            docx_buffer = DocumentExporter.export_text_to_docx_preserve_format(
+                original_file_path=original_path,
+                new_text=request.final_text,
+                file_name=export_file_name,
+            )
+        else:
+            docx_buffer = DocumentExporter.export_text_to_docx(
+                text=request.final_text,
+                file_name=export_file_name,
+                title=base_name,
+            )
+    else:
+        docx_buffer = DocumentExporter.export_text_to_docx(
+            text=request.final_text,
+            file_name=export_file_name,
+            title=base_name,
+        )
 
     # 返回文件流
     from urllib.parse import quote
