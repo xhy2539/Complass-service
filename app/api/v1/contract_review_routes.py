@@ -825,3 +825,25 @@ async def export_review_document(
             "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
         },
     )
+
+
+# --- 删除任务 ---
+
+
+@contract_review_router.delete("/reviews/{task_id}")
+def delete_review_task(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """删除审查任务（级联删除风险点、段落、句子）。"""
+    task = (
+        db.query(ReviewTask)
+        .filter(ReviewTask.id == task_id, ReviewTask.user_id == current_user.id)
+        .first()
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    db.delete(task)
+    db.commit()
+    return {"detail": "任务已删除"}

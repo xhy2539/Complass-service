@@ -444,3 +444,19 @@ def decide_single_candidate(
     db.commit()
 
     return CandidateRuleResponse.model_validate(candidate.to_dict())
+
+
+# --- 删除任务 ---
+
+
+@reverse_rule_router.delete("/{task_id}")
+def delete_reverse_rule_task(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """删除逆向解析任务（级联删除候选规则）。"""
+    task = _get_user_task(db, task_id, current_user.id)
+    db.delete(task)
+    db.commit()
+    return {"detail": "任务已删除"}

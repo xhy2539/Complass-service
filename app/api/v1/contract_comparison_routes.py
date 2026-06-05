@@ -689,3 +689,28 @@ async def get_comparison_task_risks(
             total=total, pending=pending, confirmed=confirmed, ignored=ignored
         ),
     )
+
+
+# --- 删除任务 ---
+
+
+@contract_comparison_router.delete("/comparisons/{task_id}")
+def delete_comparison_task(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """删除比对任务（级联删除文档、风险点、句子）。"""
+    task = (
+        db.query(ComparisonTask)
+        .filter(
+            ComparisonTask.id == task_id,
+            ComparisonTask.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    db.delete(task)
+    db.commit()
+    return {"detail": "任务已删除"}
