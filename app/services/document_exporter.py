@@ -10,24 +10,26 @@ from docx.shared import Pt
 from docx.text.paragraph import Paragraph
 
 
-def _replace_para_text(para: Paragraph, new_texts: list[str], index: int) -> int:
-    """用 new_texts[index] 替换段落的文本，保留格式。返回下一个索引。"""
+def _set_para_text(para: Paragraph, text: str) -> None:
+    """替换段落文本，保留格式（字体、加粗、字号等由原有 run 继承）。"""
     runs = para.runs
-    if index < len(new_texts):
-        new_text = new_texts[index]
-        if runs:
-            for run in runs[1:]:
-                run.text = ""
-            runs[0].text = new_text
-        else:
-            para.text = new_text
-        return index + 1
-    else:
-        for run in runs:
+    if runs:
+        for run in runs[1:]:
             run.text = ""
-        if not runs:
-            para.text = ""
-        return index
+        runs[0].text = text
+    else:
+        para.text = text
+
+
+def _text_similarity(t1: str, t2: str) -> float:
+    """基于字符级 Jaccard 相似度的文本比较。"""
+    if not t1 or not t2:
+        return 0.0
+    s1 = set(t1.strip())
+    s2 = set(t2.strip())
+    if not s1 or not s2:
+        return 0.0
+    return len(s1 & s2) / len(s1 | s2)
 
 
 class DocumentExporter:
@@ -80,34 +82,87 @@ class DocumentExporter:
     ) -> BytesIO:
         """基于原始 DOCX 模板替换文本，保留原有格式。
 
-        按文档元素顺序（正文段落、表格、页眉页脚）逐段落替换文本。
-        段落级格式（字体、加粗、斜体、字号、缩进、对齐）全部保留。
-        表格结构、边框、合并单元格等格式保留。
+        改用内容相似度匹配替代位置匹配，在段落增删时保持对齐：
+        - 相似度达阈值的段落 → 替换文本，保留格式
+        - 在原文档中找不到匹配的新段落 → 追加到文档末尾
+        - 在新文本中找不到匹配的旧段落 → 清空文本
         """
         doc = Document(original_file_path)
-        # 用 \n\n 分隔段落，与前端 docTextFromReview 保持一致
-        new_paragraphs = (
-            new_text.split("\n\n") if "\n\n" in new_text else new_text.split("\n")
-        )
-        para_index = 0
-        # --- 1. 只替换正文段落，表格保持原样 ---
-        # 前端 docTextFromReview 只包含正文段落，不含表格文本
-        for para in doc.paragraphs:
-            para_index = _replace_para_text(para, new_paragraphs, para_index)
+        sep = "\n\n" if "\n\n" in new_text else "\n"
+        new_paragraphs = [p for p in new_text.split(sep)]
+        original_paras = list(doc.paragraphs)
 
-        # --- 2. 处理页眉页脚 ---
-        for section in doc.sections:
-            for header_para in section.header.paragraphs:
-                para_index = _replace_para_text(header_para, new_paragraphs, para_index)
-            for footer_para in section.footer.paragraphs:
-                para_index = _replace_para_text(footer_para, new_paragraphs, para_index)
+        MATCH_THRESHOLD = 0.35
+        LOOKAHEAD = 3
 
-        # --- 3. 如果新文本比原段落多，追加到文档末尾 ---
-        if para_index < len(new_paragraphs):
-            extra = new_paragraphs[para_index:]
-            for text in extra:
-                if text.strip():
-                    doc.add_paragraph(text)
+        oi = 0  # 原始段落索引
+        ni = 0  # 新文本段落索引
+        extra: list[str] = []  # 无法定位的插入段落，追加到末尾
+
+        while oi < len(original_paras) and ni < len(new_paragraphs):
+            sim = _text_similarity(original_paras[oi].text, new_paragraphs[ni])
+
+            if sim >= MATCH_THRESHOLD:
+                # -- 直接匹配：替换文本，保留格式 --
+                _set_para_text(original_paras[oi], new_paragraphs[ni])
+                oi += 1
+                ni += 1
+                continue
+
+            # -- 探查：当前新段落是否匹配后续原始段落？--
+            # 命中说明中间的原始段落已被用户删除
+            orig_skip = None
+            for off in range(1, LOOKAHEAD + 1):
+                if oi + off < len(original_paras):
+                    s = _text_similarity(
+                        original_paras[oi + off].text, new_paragraphs[ni]
+                    )
+                    if s >= MATCH_THRESHOLD:
+                        orig_skip = off
+                        break
+
+            if orig_skip is not None:
+                for _ in range(orig_skip):
+                    _set_para_text(original_paras[oi], "")
+                    oi += 1
+                continue  # 不消耗 ni，重新用同一新段落匹配
+
+            # -- 探查：当前原始段落是否匹配后续新段落？--
+            # 命中说明中间的新段落是用户插入的
+            new_skip = None
+            for off in range(1, LOOKAHEAD + 1):
+                if ni + off < len(new_paragraphs):
+                    s = _text_similarity(
+                        original_paras[oi].text, new_paragraphs[ni + off]
+                    )
+                    if s >= MATCH_THRESHOLD:
+                        new_skip = off
+                        break
+
+            if new_skip is not None:
+                for _ in range(new_skip):
+                    extra.append(new_paragraphs[ni])
+                    ni += 1
+                continue  # 不消耗 oi，重新用同一原始段落匹配
+
+            # -- 都探查不到 → 当作内容修改处理 --
+            _set_para_text(original_paras[oi], new_paragraphs[ni])
+            oi += 1
+            ni += 1
+
+        # 清空剩余未匹配的原始段落（新文本较短）
+        while oi < len(original_paras):
+            _set_para_text(original_paras[oi], "")
+            oi += 1
+
+        # 追加剩余新段落（原文档较短）和探查到的插入段落
+        while ni < len(new_paragraphs):
+            extra.append(new_paragraphs[ni])
+            ni += 1
+
+        for text in extra:
+            if text.strip():
+                doc.add_paragraph(text)
 
         buffer = BytesIO()
         doc.save(buffer)
