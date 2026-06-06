@@ -29,10 +29,19 @@ def build_retrieval_queries(
 
 def _change_direction(before: str, after: str) -> str:
     number_direction = _number_direction(before, after)
+
+    text = before + after
+    if any(word in text for word in ("SLA", "响应", "恢复", "故障", "扣减", "未达标")):
+        return "SLA响应时间恢复时间未达标扣减" + (f" {number_direction}" if number_direction else "")
+    if any(word in text for word in ("知识产权", "源代码", "交付成果", "技术文档", "接口文档")):
+        return "源代码交付成果知识产权归属"
+    if any(word in text for word in ("验收标准", "组织验收", "验收不合格", "整改")):
+        return "验收标准验收期限不合格整改" + (f" {number_direction}" if number_direction else "")
+    if any(word in text for word in ("押金", "退还", "交接")):
+        return "押金退还交接期限" + (f" {number_direction}" if number_direction else "")
     if number_direction:
         return number_direction
 
-    text = before + after
     if "随时解除" in before and "通知" in after:
         return "随时解除改提前通知"
     if "全部损失" in before and "上限" in after:

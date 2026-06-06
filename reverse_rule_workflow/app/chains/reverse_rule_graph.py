@@ -25,9 +25,13 @@ from app.services.base_info import identify_base_info_for_pair
 from app.services.base_info import identify_base_info_with_heuristics
 from app.services.base_info import merge_base_info_with_input
 from app.services.base_info import pair_with_base_info
+from app.services.diff_service import ContractContextIndex
+from app.services.diff_service import detect_candidate_diffs
 from app.services.diff_service import diff_contract_pair
+from app.services.diff_service import split_and_index_contract
 from app.services.query_builder import build_retrieval_queries
 from app.services.review_perspective import normalize_review_perspective
+from app.services.reverse_rule_tools import build_context_pack
 from app.services.rule_merger import merge_candidate_rules
 
 RuleGenerator = Callable[
@@ -39,6 +43,7 @@ RuleGenerator = Callable[
 class ReverseRuleState(TypedDict, total=False):
     raw_pairs: list[dict[str, Any]]
     pairs: list[ContractPair]
+    context_indexes: list[ContractContextIndex]
     base_infos: list[ContractBaseInfo]
     diff_results: list[DiffResult]
     pair_rules: list[CandidateRuleForDB]
@@ -142,6 +147,7 @@ def _try_generate_rules_with_text_llm(
                             "合同组: {pair_json}",
                             "合同基础信息: {base_info_json}",
                             "差异结果: {diff_json}",
+                            "上下文包: {context_json}",
                             "知识库案例: {cases_json}",
                         ]
                     ),
@@ -198,6 +204,24 @@ def validate_candidate_rules(
             continue
         valid_rules.append(parsed)
     return valid_rules
+
+
+def _pair_prompt_payload(pair: ContractPair) -> dict[str, Any]:
+    return {
+        "pair_id": pair.pair_id,
+        "contract_type": pair.contract_type,
+        "review_role": pair.review_role,
+    }
+
+
+def _context_prompt_payload(pair: ContractPair, diff_result: DiffResult) -> list[dict[str, Any]]:
+    payload: list[dict[str, Any]] = []
+    for diff in diff_result.changed_clauses:
+        if not diff.is_substantive:
+            continue
+        context_pack = build_context_pack(pair.pair_id, pair.before_text, pair.after_text, diff)
+        payload.append(context_pack.model_dump())
+    return payload
 
 
 def process_pair(
@@ -268,13 +292,15 @@ def build_reverse_rule_graph():
     graph = StateGraph(ReverseRuleState)
     graph.add_node("validate_input", _validate_input_node)
     graph.add_node("identify_base_info", _identify_base_info_node)
+    graph.add_node("split_and_index_contract", _split_and_index_contract_node)
     graph.add_node("diff_pairs", _diff_pairs_node)
     graph.add_node("process_all_pairs", _process_all_pairs_node)
     graph.add_node("merge_rules", _merge_rules_node)
     graph.add_node("return_result", _return_result_node)
     graph.add_edge(START, "validate_input")
     graph.add_edge("validate_input", "identify_base_info")
-    graph.add_edge("validate_input", "diff_pairs")
+    graph.add_edge("validate_input", "split_and_index_contract")
+    graph.add_edge("split_and_index_contract", "diff_pairs")
     graph.add_edge(["identify_base_info", "diff_pairs"], "process_all_pairs")
     graph.add_edge("process_all_pairs", "merge_rules")
     graph.add_edge("merge_rules", "return_result")
@@ -299,8 +325,33 @@ def _resolve_base_info_for_pair(pair: ContractPair) -> ContractBaseInfo:
     return merge_base_info_with_input(pair, identify_base_info_for_pair(pair))
 
 
+def _split_and_index_contract_node(state: ReverseRuleState) -> ReverseRuleState:
+    return {
+        "context_indexes": [
+            split_and_index_contract(pair.pair_id, pair.before_text, pair.after_text)
+            for pair in state["pairs"]
+        ]
+    }
+
+
 def _diff_pairs_node(state: ReverseRuleState) -> ReverseRuleState:
-    return {"diff_results": [diff_contract_pair(pair) for pair in state["pairs"]]}
+    indexes_by_pair_id = {
+        context_index.pair_id: context_index
+        for context_index in state.get("context_indexes", [])
+    }
+    diff_results: list[DiffResult] = []
+    for pair in state["pairs"]:
+        context_index = indexes_by_pair_id.get(pair.pair_id)
+        if context_index is None:
+            diff_results.append(diff_contract_pair(pair))
+            continue
+        diff_results.append(
+            DiffResult(
+                pair_id=pair.pair_id,
+                changed_clauses=detect_candidate_diffs(pair.pair_id, context_index),
+            )
+        )
+    return {"diff_results": diff_results}
 
 
 def _process_all_pairs_node(state: ReverseRuleState) -> ReverseRuleState:
@@ -339,6 +390,9 @@ def _generate_rules_with_stub(
         cases_by_module.setdefault(case.review_module, case)
     for clause in diff_result.changed_clauses:
         if not clause.is_substantive:
+            continue
+        if clause.review_module in _MODULE_TEMPLATE_RULES:
+            rules.append(_rule_from_diff_without_case(pair, clause))
             continue
         case = cases_by_module.get(clause.review_module)
         if case is None:
@@ -408,6 +462,7 @@ def _try_generate_with_structured_llm(
                             "合同组: {pair_json}",
                             "合同基础信息: {base_info_json}",
                             "差异结果: {diff_json}",
+                            "上下文包: {context_json}",
                             "知识库案例: {cases_json}",
                         ]
                     ),
@@ -417,12 +472,16 @@ def _try_generate_with_structured_llm(
         chain = prompt | llm.with_structured_output(CandidateRuleBatch)
         response = chain.invoke(
             {
-                "pair_json": json.dumps(pair.model_dump(), ensure_ascii=False),
+                "pair_json": json.dumps(_pair_prompt_payload(pair), ensure_ascii=False),
                 "base_info_json": json.dumps(
                     base_info.model_dump() if base_info else {},
                     ensure_ascii=False,
                 ),
                 "diff_json": json.dumps(diff_result.model_dump(), ensure_ascii=False),
+                "context_json": json.dumps(
+                    _context_prompt_payload(pair, diff_result),
+                    ensure_ascii=False,
+                ),
                 "cases_json": json.dumps(
                     [case.model_dump() for case in retrieved_cases],
                     ensure_ascii=False,
@@ -522,12 +581,16 @@ def _try_generate_minimax_json_text(
     try:
         response = (prompt | llm).invoke(
             {
-                "pair_json": json.dumps(pair.model_dump(), ensure_ascii=False),
+                "pair_json": json.dumps(_pair_prompt_payload(pair), ensure_ascii=False),
                 "base_info_json": json.dumps(
                     base_info.model_dump() if base_info else {},
                     ensure_ascii=False,
                 ),
                 "diff_json": json.dumps(diff_result.model_dump(), ensure_ascii=False),
+                "context_json": json.dumps(
+                    _context_prompt_payload(pair, diff_result),
+                    ensure_ascii=False,
+                ),
                 "cases_json": json.dumps(
                     [case.model_dump() for case in retrieved_cases],
                     ensure_ascii=False,
@@ -636,29 +699,123 @@ def _best_trace_clause(diff_result: DiffResult, review_module: str | None):
     return substantive[0] if substantive else None
 
 
+_MODULE_TEMPLATE_RULES = {
+    "付款条款",
+    "服务水平",
+    "知识产权",
+    "交付验收",
+    "押金退还",
+    "数据安全",
+    "管辖法院",
+    "保密条款",
+    "解除条款",
+}
+
+
 def _rule_from_diff_without_case(pair: ContractPair, clause: Any) -> CandidateRuleForDB:
     review_module = clause.review_module or "通用条款"
+    template = _module_rule_template(review_module, clause)
     return CandidateRuleForDB(
         contract_type=pair.contract_type or "通用合同",
         review_perspective=normalize_review_perspective(pair.review_role),
         review_module=review_module,
-        risk_name=_risk_name_from_module(review_module),
-        check_point=f"检查{review_module}是否存在与本次修改相同或类似的风险安排。",
-        trigger_condition=f"{review_module}条款出现类似修改前表述，可能影响权利义务、责任承担或履约确定性时触发。",
+        risk_name=template["risk_name"],
+        check_point=template["check_point"],
+        trigger_condition=template["trigger_condition"],
         default_risk_level="中",
-        suggestion_template=f"建议参考本次修改后的表达，明确{review_module}中的关键条件、责任边界和履行要求。",
-        example_clause=clause.before,
+        suggestion_template=template["suggestion_template"],
+        example_clause=clause.before or clause.after,
         traces=[
             RuleExtractionTrace(
                 pair_id=pair.pair_id,
-                evidence_before=clause.before,
-                evidence_after=clause.after,
+                evidence_before=clause.before or "原合同未约定对应内容",
+                evidence_after=clause.after or "修改后未保留对应内容",
                 diff_summary=clause.diff_summary,
                 user_intent="无高匹配知识库案例，仅基于修改行为反推候选审核规则，需人工确认后入库。",
                 confidence=0.52,
             )
         ],
     )
+
+
+def _module_rule_template(review_module: str, clause: Any) -> dict[str, str]:
+    after = str(getattr(clause, "after", "") or "")
+    before = str(getattr(clause, "before", "") or "")
+    evidence = after or before
+    if review_module == "付款条款":
+        return {
+            "risk_name": "付款及发票条件不明确",
+            "check_point": "检查付款期限、付款起算节点、合法有效发票和付款前置条件是否明确。",
+            "trigger_condition": f"合同未明确30日内付款、合法有效发票或付款起算条件时触发；参考修改后表述：{_clip(evidence)}",
+            "suggestion_template": "建议明确在验收或确认完成并收到合法有效发票后30日内付款，避免付款期限和发票条件不清。",
+        }
+    if review_module == "服务水平":
+        return {
+            "risk_name": "SLA响应和未达标扣减机制缺失",
+            "check_point": "检查SLA响应时间、恢复时间、未达标整改和服务费扣减机制是否明确。",
+            "trigger_condition": f"合同未明确1小时等响应时间、恢复时限或5%等服务费扣减机制时触发；参考修改后表述：{_clip(evidence)}",
+            "suggestion_template": "建议明确SLA响应时间、恢复时间、连续未达标的整改方案和服务费扣减机制。",
+        }
+    if review_module == "知识产权":
+        return {
+            "risk_name": "成果和源代码知识产权归属不明确",
+            "check_point": "检查源代码、技术文档、接口文档、交付成果和既有组件的知识产权归属是否清晰。",
+            "trigger_condition": f"合同未明确源代码、交付成果归属或未约定甲方所有及既有组件保留时触发；参考修改后表述：{_clip(evidence)}",
+            "suggestion_template": "建议明确知识产权归属，区分定制成果、源代码、技术文档和乙方既有组件或通用工具。",
+        }
+    if review_module == "交付验收":
+        return {
+            "risk_name": "验收标准和整改机制不明确",
+            "check_point": "检查验收标准、验收期限、验收不合格处理和免费整改机制是否明确。",
+            "trigger_condition": f"合同未明确验收标准、验收期限或整改期限时触发；参考修改后表述：{_clip(evidence)}",
+            "suggestion_template": "建议明确验收标准、组织验收期限、验收不合格后的免费整改期限和再次验收安排。",
+        }
+    if review_module == "押金退还":
+        return {
+            "risk_name": "押金退还条件和期限不明确",
+            "check_point": "检查押金退还条件、房屋交接、款项结清和退还期限是否明确。",
+            "trigger_condition": f"合同仅约定视情况退还押金，未明确7个工作日等退还期限或交接条件时触发；参考修改后表述：{_clip(evidence)}",
+            "suggestion_template": "建议明确交接、结清费用和无损坏等退还条件，并约定出租方在固定期限内退还押金。",
+        }
+    if review_module == "数据安全":
+        return {
+            "risk_name": "数据处理和返还删除义务不明确",
+            "check_point": "检查数据处理目的、处理范围、数据返还、删除和书面证明义务是否明确。",
+            "trigger_condition": f"合同未明确数据处理边界、10日内返还或删除及书面证明义务时触发；参考修改后表述：{_clip(evidence)}",
+            "suggestion_template": "建议明确数据处理目的和范围，约定合同终止后的返还、删除期限及书面证明。",
+        }
+    if review_module == "管辖法院":
+        return {
+            "risk_name": "争议解决和管辖法院约定不明确",
+            "check_point": "检查争议解决路径、协商期限和管辖法院是否明确且便利。",
+            "trigger_condition": f"合同未明确协商不成后的起诉路径、甲方所在地或有管辖权法院时触发；参考修改后表述：{_clip(evidence)}",
+            "suggestion_template": "建议明确协商不成后的争议解决方式，并约定管辖法院所在地，例如甲方所在地有管辖权的法院。",
+        }
+    if review_module == "保密条款":
+        return {
+            "risk_name": "保密范围和保密期限不明确",
+            "check_point": "检查保密范围、客户数据、个人信息和合同终止后的保密期限是否明确。",
+            "trigger_condition": f"合同未明确客户数据等保密范围或终止后5年等保密期限时触发；参考修改后表述：{_clip(evidence)}",
+            "suggestion_template": "建议明确保密范围、保密期限、客户数据和个人信息保护要求，并约定终止后的持续保密义务。",
+        }
+    if review_module == "解除条款":
+        return {
+            "risk_name": "解除通知和费用结算机制缺失",
+            "check_point": "检查单方解除是否约定提前书面通知、已完成工作量和费用结算。",
+            "trigger_condition": f"合同允许随时解除但未约定30日书面通知或结算已完成工作量时触发；参考修改后表述：{_clip(evidence)}",
+            "suggestion_template": "建议约定解除需提前30日书面通知，并按已完成工作量进行费用结算。",
+        }
+    return {
+        "risk_name": _risk_name_from_module(review_module),
+        "check_point": f"检查{review_module}是否存在与本次修改相同或类似的风险安排。",
+        "trigger_condition": f"{review_module}条款出现类似修改前表述，可能影响权利义务、责任承担或履约确定性时触发。",
+        "suggestion_template": f"建议参考本次修改后的表达，明确{review_module}中的关键条件、责任边界和履行要求。",
+    }
+
+
+def _clip(text: str, limit: int = 80) -> str:
+    stripped = text.strip()
+    return stripped if len(stripped) <= limit else stripped[:limit] + "..."
 
 
 def _risk_name_from_module(review_module: str) -> str:

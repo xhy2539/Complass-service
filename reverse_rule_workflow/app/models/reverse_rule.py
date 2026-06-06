@@ -6,7 +6,7 @@ from pydantic import Field
 from pydantic import field_validator
 
 RiskLevel = Literal["低", "中", "高"]
-ChangeType = Literal["新增", "删除", "修改"]
+ChangeType = Literal["新增", "删除", "移位", "更改"]
 
 
 class ContractPair(BaseModel):
@@ -25,13 +25,17 @@ class ContractPair(BaseModel):
 
 
 class DiffClause(BaseModel):
+    diff_id: str = ""
     review_module: str
     change_type: ChangeType
     before: str
     after: str
+    before_location: str | None = None
+    after_location: str | None = None
     diff_summary: str
     is_substantive: bool
     substantive_reason: str | None = None
+    confidence: float = Field(default=0.7, ge=0, le=1)
 
 
 class DiffResult(BaseModel):

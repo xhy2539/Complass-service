@@ -233,6 +233,95 @@ def test_diff_ignores_numbering_punctuation_format_only_change():
     assert all(not clause.is_substantive for clause in diff.changed_clauses)
 
 
+def test_diff_uses_change_type_changed_for_substantive_text_change():
+    from app.models.reverse_rule import ContractPair
+
+    pair = ContractPair.model_validate(
+        {
+            "pair_id": "pair-change-type",
+            "before_text": "甲方应在验收后90日内支付服务费。",
+            "after_text": "甲方应在验收并收到合法有效发票后30日内支付服务费。",
+            "contract_type": "服务合同",
+            "review_role": "乙方",
+        }
+    )
+
+    diff = diff_contract_pair(pair)
+
+    assert diff.changed_clauses
+    assert diff.changed_clauses[0].change_type == "更改"
+
+
+def test_diff_detects_moved_clause_without_generating_substantive_change():
+    from app.models.reverse_rule import ContractPair
+
+    pair = ContractPair.model_validate(
+        {
+            "pair_id": "pair-move",
+            "before_text": "\n".join(
+                [
+                    "1. 甲方应在验收后30日内支付服务费。",
+                    "2. 乙方应在服务期内及时响应故障。",
+                ]
+            ),
+            "after_text": "\n".join(
+                [
+                    "1. 乙方应在服务期内及时响应故障。",
+                    "2. 甲方应在验收后30日内支付服务费。",
+                ]
+            ),
+            "contract_type": "服务合同",
+            "review_role": "乙方",
+        }
+    )
+
+    diff = diff_contract_pair(pair)
+
+    assert {clause.change_type for clause in diff.changed_clauses} == {"移位"}
+    assert all(not clause.is_substantive for clause in diff.changed_clauses)
+
+
+def test_long_contract_ip_and_sla_changes_split_into_separate_diffs():
+    from app.models.reverse_rule import ContractPair
+
+    repeated = "\n".join(
+        [
+            "项目实施期间，乙方应提交周报、会议纪要、需求确认单、测试记录和上线方案。甲方应配合提供业务资料、测试账号和验收反馈。"
+            for _ in range(35)
+        ]
+    )
+    before_text = "\n".join(
+        [
+            "甲方委托乙方建设业务中台系统，项目包括需求调研、原型设计、系统开发、联调测试、上线支持和运维交接。",
+            repeated,
+            "乙方完成开发成果后交付甲方使用，合同未明确源代码和技术文档的权利归属。系统上线后乙方应尽快处理故障，未约定响应时间和未达标扣款机制。",
+        ]
+    )
+    after_text = "\n".join(
+        [
+            "甲方委托乙方建设业务中台系统，项目包括需求调研、原型设计、系统开发、联调测试、上线支持和运维交接。",
+            repeated,
+            "乙方为甲方定制开发形成的源代码、数据库设计文档、接口文档和交付成果的知识产权归甲方所有。系统上线后一级故障30分钟内响应、4小时内恢复，连续未达标的甲方可扣减当月服务费10%。",
+        ]
+    )
+    pair = ContractPair.model_validate(
+        {
+            "pair_id": "pair-long-ip-sla",
+            "before_text": before_text,
+            "after_text": after_text,
+            "contract_type": "软件开发服务合同",
+            "review_role": "甲方",
+        }
+    )
+
+    diff = diff_contract_pair(pair)
+    modules = {clause.review_module for clause in diff.changed_clauses if clause.is_substantive}
+
+    assert "知识产权" in modules
+    assert "服务水平" in modules
+    assert len([clause for clause in diff.changed_clauses if clause.is_substantive]) >= 2
+
+
 def test_query_contains_module_direction_contract_type_and_role_without_full_text():
     sample = sample_by_name("付款期限")
     from app.models.reverse_rule import ContractPair

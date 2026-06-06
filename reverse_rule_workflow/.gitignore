@@ -8,3 +8,4 @@ test-tmp/
 storage/test_*/
 storage/reverse_rule_kb/*.tmp
 storage/reverse_rule_kb/write_probe.txt
+docs/reverse_rule_agent_workflow_design.md
