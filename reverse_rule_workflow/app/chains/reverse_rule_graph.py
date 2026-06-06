@@ -30,8 +30,8 @@ from app.services.diff_service import detect_candidate_diffs
 from app.services.diff_service import diff_contract_pair
 from app.services.diff_service import split_and_index_contract
 from app.services.query_builder import build_retrieval_queries
-from app.services.review_perspective import normalize_review_perspective
 from app.services.reverse_rule_tools import build_context_pack
+from app.services.review_perspective import normalize_review_perspective
 from app.services.rule_merger import merge_candidate_rules
 
 RuleGenerator = Callable[

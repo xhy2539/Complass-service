@@ -90,7 +90,10 @@ def hybrid_search(
         from .db import _conn
 
         c = _conn()
-        all_ids = [row[0] for row in c.execute("SELECT case_id FROM cases").fetchall()]
+        all_ids = [
+            row[0]
+            for row in c.execute("SELECT case_id FROM cases ORDER BY rowid").fetchall()
+        ]
         c.close()
         for dist, idx in zip(distances[0], indices[0]):
             if idx < len(all_ids):
@@ -142,3 +145,12 @@ def hybrid_search(
     top_ids = [cid for cid, _ in ranked[:n_candidates]]
 
     return load_cases(top_ids)
+
+
+def clear_cache() -> None:
+    """重建索引后清空 BM25 缓存，下次查询时自动重建。"""
+    global _BM25_INDEX, _BM25_DOCS, _BM25_IDS
+    with _lock:
+        _BM25_INDEX = {}
+        _BM25_DOCS = {}
+        _BM25_IDS = {}

@@ -10,6 +10,7 @@ from .db import init_db
 from .db import upsert_case
 from .embedder import DIM
 from .embedder import embed
+from .retriever import clear_cache
 
 FAISS_PATH = Path(__file__).resolve().parent.parent / "storage" / "faiss.index"
 DEFAULT_JSONL = (
@@ -74,6 +75,7 @@ def rebuild(jsonl_path: str | None = None) -> dict:
         for c in cases:
             upsert_case(c)
 
+    clear_cache()
     return {
         "indexed": len(cases),
         "modules": len({c.get("review_module", "") for c in cases}),
@@ -96,3 +98,4 @@ def add_case(case: dict) -> None:
 
         init_db()
         upsert_case(case)
+    clear_cache()
