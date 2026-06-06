@@ -18,6 +18,14 @@ from .retriever import hybrid_search
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from pathlib import Path
+
+    faiss_path = Path(__file__).resolve().parent.parent / "storage" / "faiss.index"
+    if not faiss_path.exists():
+        try:
+            rebuild()
+        except Exception:
+            pass
     yield
 
 

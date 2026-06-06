@@ -30,8 +30,6 @@ def init_db() -> None:
             )"""
         )
         c.execute("CREATE INDEX IF NOT EXISTS idx_module ON cases(review_module)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_contract ON cases(contract_type)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_role ON cases(review_role)")
         c.commit()
         c.close()
 
@@ -70,11 +68,15 @@ def filter_ids(
             where.append("review_module = ?")
             params.append(review_module)
         if contract_type:
-            where.append("contract_type LIKE ?")
-            params.append(f'%"{contract_type}"%')
+            where.append(
+                "EXISTS (SELECT 1 FROM json_each(contract_type) WHERE value = ?)"
+            )
+            params.append(contract_type)
         if review_role:
-            where.append("review_role LIKE ?")
-            params.append(f'%"{review_role}"%')
+            where.append(
+                "EXISTS (SELECT 1 FROM json_each(review_role) WHERE value = ?)"
+            )
+            params.append(review_role)
         c.execute(f"SELECT case_id FROM cases WHERE {' AND '.join(where)}", params)
         ids = {row[0] for row in c.fetchall()}
         c.close()
@@ -91,6 +93,8 @@ def load_cases(case_ids: list[str]) -> list[dict]:
             f"SELECT data_json FROM cases WHERE case_id IN ({placeholders})",
             case_ids,
         )
-        cases = [json.loads(row[0]) for row in c.fetchall()]
+        case_map = {
+            json.loads(row[0])["case_id"]: json.loads(row[0]) for row in c.fetchall()
+        }
         c.close()
-        return cases
+        return [case_map[cid] for cid in case_ids if cid in case_map]

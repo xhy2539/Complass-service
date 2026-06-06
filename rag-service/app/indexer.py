@@ -13,6 +13,7 @@ from .embedder import embed
 from .retriever import clear_cache
 
 FAISS_PATH = Path(__file__).resolve().parent.parent / "storage" / "faiss.index"
+ID_LIST_PATH = Path(__file__).resolve().parent.parent / "storage" / "faiss_ids.json"
 DEFAULT_JSONL = (
     Path(__file__).resolve().parent.parent / "data" / "reverse_rule_cases.jsonl"
 )
@@ -70,12 +71,19 @@ def rebuild(jsonl_path: str | None = None) -> dict:
         index.add(vectors)
         faiss.write_index(index, str(FAISS_PATH))
 
+        # 保存 case_id 顺序（与 FAISS 向量位置一一对应）
+        case_ids = [c["case_id"] for c in cases]
+        ID_LIST_PATH.write_text(
+            json.dumps(case_ids, ensure_ascii=False), encoding="utf-8"
+        )
+
         # 构建 SQLite
         init_db()
         for c in cases:
             upsert_case(c)
 
-    clear_cache()
+        clear_cache()
+
     return {
         "indexed": len(cases),
         "modules": len({c.get("review_module", "") for c in cases}),
@@ -96,6 +104,15 @@ def add_case(case: dict) -> None:
             index.add(vec)
             faiss.write_index(index, str(FAISS_PATH))
 
+        # 更新 ID 列表
+        ids = (
+            json.loads(ID_LIST_PATH.read_text(encoding="utf-8"))
+            if ID_LIST_PATH.exists()
+            else []
+        )
+        ids.append(case["case_id"])
+        ID_LIST_PATH.write_text(json.dumps(ids, ensure_ascii=False), encoding="utf-8")
+
         init_db()
         upsert_case(case)
-    clear_cache()
+        clear_cache()

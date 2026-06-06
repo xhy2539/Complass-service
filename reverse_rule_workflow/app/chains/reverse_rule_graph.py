@@ -236,12 +236,16 @@ def _pair_prompt_payload(pair: ContractPair) -> dict[str, Any]:
     }
 
 
-def _context_prompt_payload(pair: ContractPair, diff_result: DiffResult) -> list[dict[str, Any]]:
+def _context_prompt_payload(
+    pair: ContractPair, diff_result: DiffResult
+) -> list[dict[str, Any]]:
     payload: list[dict[str, Any]] = []
     for diff in diff_result.changed_clauses:
         if not diff.is_substantive:
             continue
-        context_pack = build_context_pack(pair.pair_id, pair.before_text, pair.after_text, diff)
+        context_pack = build_context_pack(
+            pair.pair_id, pair.before_text, pair.after_text, diff
+        )
         payload.append(context_pack.model_dump())
     return payload
 
@@ -895,5 +899,9 @@ def _parse_retrieved_cases(raw_results: list[Any]) -> list[RetrievedCase]:
         try:
             cases.append(RetrievedCase.model_validate(data))
         except Exception:
-            continue
+            _logger = logging.getLogger(__name__)
+            _logger.warning(
+                "[ReverseRule] failed to parse retrieved case: %s",
+                str(data.get("case_id", data))[:100],
+            )
     return cases

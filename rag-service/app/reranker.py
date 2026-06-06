@@ -3,7 +3,6 @@
 import json
 import os
 import threading
-from pathlib import Path
 
 _lock = threading.Lock()
 
@@ -19,22 +18,7 @@ RERANK_PROMPT = """你是合同审核规则检索助手。
 {cases_json}"""
 
 
-def _load_env() -> None:
-    env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-    if not env_path.exists():
-        env_path = Path(".env")
-    if not env_path.exists():
-        return
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, val = line.split("=", 1)
-        os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
-
-
 def _get_llm_config() -> dict:
-    _load_env()
     return {
         "api_key": os.getenv("MINIMAX_API_KEY") or os.getenv("OPENAI_API_KEY", ""),
         "base_url": os.getenv("MINIMAX_BASE_URL", "https://api.minimax.io/v1"),

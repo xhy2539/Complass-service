@@ -12,20 +12,24 @@ from .db import load_cases
 from .embedder import embed
 
 FAISS_PATH = Path(__file__).resolve().parent.parent / "storage" / "faiss.index"
+ID_LIST_PATH = Path(__file__).resolve().parent.parent / "storage" / "faiss_ids.json"
 _lock = threading.Lock()
 
 _FAISS_INDEX: faiss.IndexFlatIP | None = None
+_FAISS_IDS: list[str] = []
 _BM25_INDEX: dict[str, BM25Okapi] = {}
 _BM25_DOCS: dict[str, list[str]] = {}
 _BM25_IDS: dict[str, list[str]] = {}
 
 
 def _get_faiss_index() -> faiss.IndexFlatIP:
-    global _FAISS_INDEX
+    global _FAISS_INDEX, _FAISS_IDS
     if _FAISS_INDEX is None:
         with _lock:
             if _FAISS_INDEX is None and FAISS_PATH.exists():
                 _FAISS_INDEX = faiss.read_index(str(FAISS_PATH))
+                if ID_LIST_PATH.exists():
+                    _FAISS_IDS = json.loads(ID_LIST_PATH.read_text(encoding="utf-8"))
     return _FAISS_INDEX
 
 
@@ -86,18 +90,10 @@ def hybrid_search(
     if faiss_index is not None:
         qv = embed([query])[0].reshape(1, -1)
         distances, indices = faiss_index.search(qv, min(100, faiss_index.ntotal))
-        # map FAISS idx → case_id via DB
-        from .db import _conn
-
-        c = _conn()
-        all_ids = [
-            row[0]
-            for row in c.execute("SELECT case_id FROM cases ORDER BY rowid").fetchall()
-        ]
-        c.close()
+        # map FAISS idx → case_id via explicit id list
         for dist, idx in zip(distances[0], indices[0]):
-            if idx < len(all_ids):
-                faiss_scores[all_ids[idx]] = float(dist)
+            if idx < len(_FAISS_IDS):
+                faiss_scores[_FAISS_IDS[idx]] = float(dist)
 
     # 2. BM25 关键词检索
     bm25_scores: dict[str, float] = {}
@@ -148,9 +144,11 @@ def hybrid_search(
 
 
 def clear_cache() -> None:
-    """重建索引后清空 BM25 缓存，下次查询时自动重建。"""
-    global _BM25_INDEX, _BM25_DOCS, _BM25_IDS
+    """重建索引后清空所有缓存，下次查询时自动重建。"""
+    global _FAISS_INDEX, _FAISS_IDS, _BM25_INDEX, _BM25_DOCS, _BM25_IDS
     with _lock:
+        _FAISS_INDEX = None
+        _FAISS_IDS = []
         _BM25_INDEX = {}
         _BM25_DOCS = {}
         _BM25_IDS = {}
