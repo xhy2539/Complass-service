@@ -4,8 +4,8 @@ from typing import Any
 
 from app.models.reverse_rule import CandidateRuleForDB
 from app.models.reverse_rule import DiffClause
-from app.services.diff_service import ContractContextIndex
 from app.services.diff_service import ClauseSegment
+from app.services.diff_service import ContractContextIndex
 from app.services.diff_service import split_and_index_contract
 
 
@@ -54,7 +54,9 @@ def get_local_context(
         start = max(0, index - window)
         end = min(len(segments), index + window + 1)
         for segment in segments[start:end]:
-            snippets.append(ContextSnippet(text=segment.text, location=segment.location, score=1.0))
+            snippets.append(
+                ContextSnippet(text=segment.text, location=segment.location, score=1.0)
+            )
     return _dedupe_snippets(snippets)
 
 
@@ -75,7 +77,9 @@ def semantic_context_search(
         score = _weighted_score(query_tokens, segment.text)
         if score <= 0:
             continue
-        candidates.append(ContextSnippet(text=segment.text, location=segment.location, score=score))
+        candidates.append(
+            ContextSnippet(text=segment.text, location=segment.location, score=score)
+        )
     candidates.sort(key=lambda snippet: snippet.score, reverse=True)
     return candidates[:top_k]
 
@@ -85,11 +89,22 @@ def resolve_references(
     diff: DiffClause,
     terms: list[str],
 ) -> list[ContextSnippet]:
-    reference_terms = [term for term in terms if term and term in f"{diff.before}{diff.after}"]
+    reference_terms = [
+        term for term in terms if term and term in f"{diff.before}{diff.after}"
+    ]
     if not reference_terms:
         reference_terms = [
             term
-            for term in ("附件", "验收标准", "本条", "上述", "服务费", "定义", "交付成果", "保密信息")
+            for term in (
+                "附件",
+                "验收标准",
+                "本条",
+                "上述",
+                "服务费",
+                "定义",
+                "交付成果",
+                "保密信息",
+            )
             if term in f"{diff.before}{diff.after}"
         ]
     snippets: list[ContextSnippet] = []
@@ -186,7 +201,10 @@ def _tokens(text: str) -> list[str]:
     tokens.extend(re.findall(r"[\u4e00-\u9fff]{2,}", text))
     for size in (2, 3, 4):
         if len(normalized) >= size:
-            tokens.extend(normalized[index : index + size] for index in range(len(normalized) - size + 1))
+            tokens.extend(
+                normalized[index : index + size]
+                for index in range(len(normalized) - size + 1)
+            )
     return tokens
 
 

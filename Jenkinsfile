@@ -57,8 +57,8 @@ pipeline {
                         sh '''
                             set -eux
                             . .venv/bin/activate
-                            ruff check app/
-                            ruff format --check app/
+                            ruff check app/ reverse_rule_workflow/app/ rag-service/app/
+                            ruff format --check app/ reverse_rule_workflow/app/ rag-service/app/
                         '''
                     } else {
                         bat '''
@@ -78,7 +78,7 @@ pipeline {
                         sh '''
                             set -eux
                             . .venv/bin/activate
-                            mypy app/ || true
+                            mypy app/ reverse_rule_workflow/app/ || true
                         '''
                     } else {
                         bat '''
@@ -116,7 +116,7 @@ pipeline {
                         sh '''
                             set -eux
                             . .venv/bin/activate
-                            python -m compileall -q app
+                            python -m compileall -q app reverse_rule_workflow/app rag-service/app
                         '''
                     } else {
                         bat '''
@@ -163,7 +163,7 @@ pipeline {
                             git stash clear 2>/dev/null || true
                             git pull --ff-only
                             docker build -t complass-service:latest .
-                            docker compose up -d
+                            docker compose up -d --build
                             docker compose ps
                             sleep 5
                             curl -f --max-time 10 --retry 3 --retry-delay 3 http://127.0.0.1:8080/health
