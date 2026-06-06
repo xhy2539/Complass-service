@@ -1,14 +1,15 @@
-FROM python:3.12-slim
+FROM docker.1ms.run/library/python:3.12-slim
 
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
 COPY app/ ./app/
 RUN mkdir -p /app/storage
 
 ENV PYTHONUNBUFFERED=1
+ENV HF_ENDPOINT=https://hf-mirror.com
 
 EXPOSE 8000
 
