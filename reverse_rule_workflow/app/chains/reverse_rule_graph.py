@@ -71,28 +71,50 @@ def retrieve_cases_for_diff(
     review_role: str | None = None,
     k: int = 3,
 ) -> list[RetrievedCase]:
-    try:
-        import app.kb.retriever as retriever
+    retrieved: list[RetrievedCase] = []
+    substantive_clauses = [
+        clause for clause in diff_result.changed_clauses if clause.is_substantive
+    ]
 
-        retrieved: list[RetrievedCase] = []
-        substantive_clauses = [
-            clause for clause in diff_result.changed_clauses if clause.is_substantive
-        ]
-        for index, query in enumerate(queries):
-            clause = (
-                substantive_clauses[index] if index < len(substantive_clauses) else None
+    for index, query in enumerate(queries):
+        clause = (
+            substantive_clauses[index] if index < len(substantive_clauses) else None
+        )
+        review_module = clause.review_module if clause else None
+
+        # 1. Try RAG service first
+        try:
+            from app.kb.rag_client import rag_search
+
+            rag_results = rag_search(
+                query=query,
+                review_module=review_module,
+                contract_type=contract_type,
+                review_role=review_role,
+                top_k=k,
             )
+            if rag_results:
+                retrieved.extend(_parse_retrieved_cases(rag_results))
+                continue
+        except Exception:
+            pass
+
+        # 2. RAG failed or returned empty — local retriever
+        try:
+            import app.kb.retriever as retriever
+
             raw_results = retriever.retrieve_reverse_rule_cases(
                 query,
-                review_module=clause.review_module if clause else None,
+                review_module=review_module,
                 contract_type=contract_type,
                 review_role=review_role,
                 k=k,
             )
             retrieved.extend(_parse_retrieved_cases(raw_results))
-        return retrieved or fallback_reverse_rule_cases(diff_result, k=k)
-    except Exception:
-        return fallback_reverse_rule_cases(diff_result, k=k)
+        except Exception:
+            pass
+
+    return retrieved or fallback_reverse_rule_cases(diff_result, k=k)
 
 
 def generate_rules_for_pair(

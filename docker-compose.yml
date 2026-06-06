@@ -58,6 +58,20 @@ services:
     networks:
       - complass
 
+  rag-service:
+    build: ./rag-service
+    container_name: complass-rag
+    restart: always
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./rag-service/storage:/app/storage
+      - ./reverse_rule_workflow/data:/app/data:ro
+    networks:
+      - complass
+
 networks:
   complass:
     external: true
