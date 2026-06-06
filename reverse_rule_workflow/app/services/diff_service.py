@@ -152,12 +152,16 @@ def detect_candidate_diffs(
             raw_inserts.extend(after_chunk)
             continue
         if tag == "replace":
-            changes, deletes, inserts = _pair_replaced_segments(before_chunk, after_chunk)
+            changes, deletes, inserts = _pair_replaced_segments(
+                before_chunk, after_chunk
+            )
             clauses.extend(changes)
             raw_deletes.extend(deletes)
             raw_inserts.extend(inserts)
 
-    move_clauses, remaining_deletes, remaining_inserts = _detect_moves(raw_deletes, raw_inserts)
+    move_clauses, remaining_deletes, remaining_inserts = _detect_moves(
+        raw_deletes, raw_inserts
+    )
     clauses.extend(move_clauses)
     clauses.extend(_single_side_clauses(remaining_deletes, "删除"))
     clauses.extend(_single_side_clauses(remaining_inserts, "新增"))
@@ -196,14 +200,18 @@ def split_contract_clauses(text: str, version: str = "") -> list[ClauseSegment]:
                 order = _append_sentence_segments(segments, body, title, version, order)
             continue
 
-        order = _append_sentence_segments(segments, line, current_section, version, order)
+        order = _append_sentence_segments(
+            segments, line, current_section, version, order
+        )
 
     if segments:
         return segments
     stripped = text.strip()
-    return [
-        ClauseSegment("s-0001", "全文", stripped, version=version, order=1)
-    ] if stripped else []
+    return (
+        [ClauseSegment("s-0001", "全文", stripped, version=version, order=1)]
+        if stripped
+        else []
+    )
 
 
 def _append_sentence_segments(
@@ -231,7 +239,11 @@ def _append_sentence_segments(
 
 
 def _split_sentences(text: str) -> list[str]:
-    return [match.group(0).strip() for match in SENTENCE_PATTERN.finditer(text) if match.group(0).strip()]
+    return [
+        match.group(0).strip()
+        for match in SENTENCE_PATTERN.finditer(text)
+        if match.group(0).strip()
+    ]
 
 
 def _pair_replaced_segments(
@@ -356,7 +368,9 @@ def _single_side_clauses(
     return clauses
 
 
-def _changed_clause(before_segment: ClauseSegment, after_segment: ClauseSegment) -> DiffClause:
+def _changed_clause(
+    before_segment: ClauseSegment, after_segment: ClauseSegment
+) -> DiffClause:
     before_text = before_segment.text
     after_text = after_segment.text
     review_module = _infer_review_module(before_text, after_text)
@@ -381,7 +395,9 @@ def _changed_clause(before_segment: ClauseSegment, after_segment: ClauseSegment)
     )
 
 
-def _move_clause(before_segment: ClauseSegment, after_segment: ClauseSegment) -> DiffClause:
+def _move_clause(
+    before_segment: ClauseSegment, after_segment: ClauseSegment
+) -> DiffClause:
     review_module = _infer_review_module(before_segment.text, after_segment.text)
     return DiffClause(
         review_module=review_module,
@@ -402,16 +418,41 @@ def _move_clause(before_segment: ClauseSegment, after_segment: ClauseSegment) ->
 
 def _with_diff_ids(pair_id: str, clauses: list[DiffClause]) -> list[DiffClause]:
     return [
-        clause.model_copy(update={"diff_id": clause.diff_id or f"{pair_id}-diff-{index}"})
+        clause.model_copy(
+            update={"diff_id": clause.diff_id or f"{pair_id}-diff-{index}"}
+        )
         for index, clause in enumerate(clauses, start=1)
     ]
 
 
 def _infer_review_module(before: str, after: str) -> str:
     text = before + after
-    if any(word in text for word in ("知识产权", "源代码", "交付成果", "技术文档", "接口文档", "既有技术", "通用组件")):
+    if any(
+        word in text
+        for word in (
+            "知识产权",
+            "源代码",
+            "交付成果",
+            "技术文档",
+            "接口文档",
+            "既有技术",
+            "通用组件",
+        )
+    ):
         return "知识产权"
-    if any(word in text for word in ("SLA", "服务水平", "响应", "恢复", "故障", "未达标", "扣减", "扣款")):
+    if any(
+        word in text
+        for word in (
+            "SLA",
+            "服务水平",
+            "响应",
+            "恢复",
+            "故障",
+            "未达标",
+            "扣减",
+            "扣款",
+        )
+    ):
         return "服务水平"
     if any(word in text for word in ("押金", "退还", "无息退还", "剩余押金")):
         return "押金退还"
@@ -433,11 +474,35 @@ def _infer_review_module(before: str, after: str) -> str:
         return "保密条款"
     if "解除" in text or "终止" in text:
         return "解除条款"
-    if any(word in text for word in ("数据", "个人信息", "删除", "返还", "书面证明", "加密", "访问控制")):
+    if any(
+        word in text
+        for word in ("数据", "个人信息", "删除", "返还", "书面证明", "加密", "访问控制")
+    ):
         return "数据安全"
-    if any(word in text for word in ("付款", "支付", "款项", "付款申请", "支付相应款项", "服务费", "发票")):
+    if any(
+        word in text
+        for word in (
+            "付款",
+            "支付",
+            "款项",
+            "付款申请",
+            "支付相应款项",
+            "服务费",
+            "发票",
+        )
+    ):
         return "付款条款"
-    if any(word in text for word in ("验收标准", "组织验收", "验收期限", "验收不合格", "免费整改", "整改")):
+    if any(
+        word in text
+        for word in (
+            "验收标准",
+            "组织验收",
+            "验收期限",
+            "验收不合格",
+            "免费整改",
+            "整改",
+        )
+    ):
         return "交付验收"
     if any(word in text for word in ("管辖", "法院", "仲裁")):
         return "管辖法院"
@@ -469,7 +534,18 @@ def _is_substantive_change(before: str, after: str) -> bool:
         return True
     if any(
         keyword in text
-        for keyword in ("管辖", "法院", "仲裁", "责任上限", "赔偿总额", "知识产权", "源代码", "SLA", "响应", "扣减")
+        for keyword in (
+            "管辖",
+            "法院",
+            "仲裁",
+            "责任上限",
+            "赔偿总额",
+            "知识产权",
+            "源代码",
+            "SLA",
+            "响应",
+            "扣减",
+        )
     ):
         return _normalize_polish(before) != _normalize_polish(after)
     ratio = SequenceMatcher(
@@ -537,9 +613,17 @@ def _summarize_diff(
     change_type: str = "更改",
 ) -> str:
     if change_type == "新增":
-        return f"{review_module}新增实质内容：“{after}”。" if is_substantive else f"{review_module}新增非实质内容：“{after}”。"
+        return (
+            f"{review_module}新增实质内容：“{after}”。"
+            if is_substantive
+            else f"{review_module}新增非实质内容：“{after}”。"
+        )
     if change_type == "删除":
-        return f"{review_module}删除实质内容：“{before}”。" if is_substantive else f"{review_module}删除非实质内容：“{before}”。"
+        return (
+            f"{review_module}删除实质内容：“{before}”。"
+            if is_substantive
+            else f"{review_module}删除非实质内容：“{before}”。"
+        )
     if is_substantive:
         return f"{review_module}发生实质性更改：由“{before}”调整为“{after}”。"
     return f"{review_module}疑似仅发生措辞润色：由“{before}”调整为“{after}”。"

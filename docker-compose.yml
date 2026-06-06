@@ -68,6 +68,7 @@ services:
       - .env
     volumes:
       - ./rag-service/storage:/app/storage
+      - ./rag-service/model_cache:/root/.cache/huggingface
       - ./reverse_rule_workflow/data:/app/data:ro
     networks:
       - complass
