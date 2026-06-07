@@ -450,7 +450,7 @@ async def _run_review_task_async(
     db.query(RiskPoint).filter(RiskPoint.review_task_id == task_id).delete()
     db.query(Paragraph).filter(Paragraph.review_task_id == task_id).delete()
     db.query(Sentence).filter(Sentence.review_task_id == task_id).delete()
-    db.flush()
+    db.commit()
 
     content = read_task_upload(file_path)
     parse_result = DocumentParser.parse(content, file_name)
