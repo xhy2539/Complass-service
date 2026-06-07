@@ -402,22 +402,11 @@ async def handle_feishu_callback(request: Request) -> Response:
                         results.append({"task_id": task_id, "file_name": name})
 
                     if len(results) == 1:
-                        db_session = get_db_session()
-                        try:
-                            task = (
-                                db_session.query(ReviewTask)
-                                .filter(ReviewTask.id == results[0]["task_id"])
-                                .first()
-                            )
-                            risk_summary = task.risk_summary if task else None
-                        finally:
-                            db_session.close()
                         await asyncio.to_thread(
                             send_result_card,
                             open_id,
                             results[0]["task_id"],
                             results[0]["file_name"],
-                            risk_summary,
                         )
                     else:
                         await asyncio.to_thread(
@@ -451,17 +440,12 @@ async def handle_feishu_callback(request: Request) -> Response:
                         task_id = await create_comparison_task_from_feishu(
                             old_content, old_name, new_content, new_name, open_id
                         )
-                        task = await asyncio.to_thread(
-                            _wait_for_comparison_task, task_id
-                        )
-                        diff_count = _get_comparison_diff_count(task)
                         await asyncio.to_thread(
                             send_comparison_card,
                             open_id,
                             task_id,
                             old_name,
                             new_name,
-                            diff_count,
                         )
 
                 redis.update_session_status(session_id, RedisSessionStatus.COMPLETED)
@@ -895,8 +879,8 @@ def send_result_card(
     card = {
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"content": "✅ 审查完成", "tag": "plain_text"},
-            "template": "#52c41a",
+            "title": {"content": "⏳ 审查处理中", "tag": "plain_text"},
+            "template": "#1890ff",
         },
         "elements": [
             {
@@ -907,6 +891,14 @@ def send_result_card(
             {
                 "tag": "div",
                 "text": {"content": f"🆔 **任务ID**：{task_id}", "tag": "lark_md"},
+                "style": {"margin_bottom": 16},
+            },
+            {
+                "tag": "div",
+                "text": {
+                    "content": "任务已提交，稍后可查看审查结果",
+                    "tag": "lark_md",
+                },
                 "style": {"margin_bottom": 16},
             },
             {
@@ -942,6 +934,68 @@ def send_result_card(
         logger.info("[飞书机器人] 审查结果卡片发送成功")
     except Exception as e:
         logger.error(f"[飞书机器人] 发送审查结果卡片失败: {e}")
+
+
+def send_review_completed_card(open_id: str, task_id: str, file_name: str) -> None:
+    access_token = get_tenant_access_token()
+    url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id"
+
+    frontend_url = _get_frontend_base_url()
+    review_url = f"{frontend_url}/reviews/{task_id}"
+
+    redis = get_redis_service()
+    try:
+        notify_key = f"feishu:notify:review:{task_id}:completed"
+        if redis._client.set(notify_key, "1", nx=True, ex=24 * 3600) is None:
+            return
+    except Exception:
+        pass
+
+    card = {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"content": "✅ 审查完成", "tag": "plain_text"},
+            "template": "#52c41a",
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": {"content": f"📄 **文件**：{file_name}", "tag": "lark_md"},
+                "style": {"margin_bottom": 16},
+            },
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"content": "🔗 查看详情", "tag": "plain_text"},
+                        "type": "primary",
+                        "url": review_url,
+                        "style": {"height": "40px", "width": "140px"},
+                    }
+                ],
+            },
+        ],
+    }
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "receive_id": open_id,
+        "msg_type": "interactive",
+        "content": json.dumps(card),
+    }
+
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+        logger.info("[飞书机器人] 审查完成卡片发送成功")
+    except Exception as e:
+        logger.error(f"[飞书机器人] 发送审查完成卡片失败: {e}")
 
 
 def send_review_batch_card(open_id: str, results: list):
@@ -990,10 +1044,10 @@ def send_review_batch_card(open_id: str, results: list):
         "config": {"wide_screen_mode": True},
         "header": {
             "title": {
-                "content": f"✅ {len(results)} 份文件审查完成",
+                "content": f"⏳ 已提交 {len(results)} 份文件审查",
                 "tag": "plain_text",
             },
-            "template": "#52c41a",
+            "template": "#1890ff",
         },
         "elements": elements,
     }
@@ -1030,6 +1084,83 @@ def send_comparison_card(
 
     frontend_url = _get_frontend_base_url()
     comparison_url = f"{frontend_url}/comparisons/{task_id}"
+
+    card = {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"content": "⏳ 比对处理中", "tag": "plain_text"},
+            "template": "#1890ff",
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": {"content": f"📄 **原始文件**：{old_name}", "tag": "lark_md"},
+                "style": {"margin_bottom": 8},
+            },
+            {
+                "tag": "div",
+                "text": {"content": f"📄 **新版本**：{new_name}", "tag": "lark_md"},
+                "style": {"margin_bottom": 16},
+            },
+            {
+                "tag": "div",
+                "text": {
+                    "content": "任务已提交，稍后可查看比对结果",
+                    "tag": "lark_md",
+                },
+                "style": {"margin_bottom": 16},
+            },
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"content": "🔗 查看详情", "tag": "plain_text"},
+                        "type": "primary",
+                        "url": comparison_url,
+                        "style": {"height": "40px", "width": "140px"},
+                    }
+                ],
+            },
+        ],
+    }
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "receive_id": open_id,
+        "msg_type": "interactive",
+        "content": json.dumps(card),
+    }
+
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+        logger.info("[飞书机器人] 比对结果卡片发送成功")
+    except Exception as e:
+        logger.error(f"[飞书机器人] 发送比对结果卡片失败: {e}")
+
+
+def send_comparison_completed_card(
+    open_id: str, task_id: str, old_name: str, new_name: str
+) -> None:
+    access_token = get_tenant_access_token()
+    url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id"
+
+    frontend_url = _get_frontend_base_url()
+    comparison_url = f"{frontend_url}/comparisons/{task_id}"
+
+    redis = get_redis_service()
+    try:
+        notify_key = f"feishu:notify:comparison:{task_id}:completed"
+        if redis._client.set(notify_key, "1", nx=True, ex=24 * 3600) is None:
+            return
+    except Exception:
+        pass
 
     card = {
         "config": {"wide_screen_mode": True},
@@ -1078,9 +1209,9 @@ def send_comparison_card(
         with httpx.Client(timeout=15.0) as client:
             response = client.post(url, headers=headers, json=payload)
             response.raise_for_status()
-        logger.info("[飞书机器人] 比对结果卡片发送成功")
+        logger.info("[飞书机器人] 比对完成卡片发送成功")
     except Exception as e:
-        logger.error(f"[飞书机器人] 发送比对结果卡片失败: {e}")
+        logger.error(f"[飞书机器人] 发送比对完成卡片失败: {e}")
 
 
 # ----------------------
@@ -1224,7 +1355,7 @@ async def create_comparison_task_from_feishu(
             sanitization_status="not_required",
             rules_snapshot_json=[],
             contract_type="通用",
-            enhance=True,
+            enhance=False,
             status=TaskStatus.PENDING,
         )
         db.add(task)
@@ -1241,7 +1372,7 @@ async def create_comparison_task_from_feishu(
             new_name or "unknown",
             old_file_path,
             new_file_path,
-            True,
+            False,
             "通用",
         )
     )

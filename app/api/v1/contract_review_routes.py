@@ -413,6 +413,26 @@ def _process_review_task_background(
             )
         )
         db.commit()
+        try:
+            current_user = db.query(User).filter(User.id == user_id).first()
+            open_id = (
+                (current_user.feishu_open_id or "").strip() if current_user else ""
+            )
+            if open_id:
+                task = (
+                    db.query(ReviewTask)
+                    .filter(ReviewTask.id == task_id, ReviewTask.user_id == user_id)
+                    .first()
+                )
+                from app.services.feishu_bot import send_review_completed_card
+
+                send_review_completed_card(
+                    open_id,
+                    task_id,
+                    (task.file_name if task and task.file_name else file_name),
+                )
+        except Exception as e:
+            logger.error("[Review] 发送飞书审查完成卡片失败 task_id=%s: %s", task_id, e)
     except Exception as e:
         db.rollback()
         task = db.query(ReviewTask).filter(ReviewTask.id == task_id).first()
