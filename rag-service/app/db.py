@@ -77,8 +77,12 @@ def filter_ids(
                 "EXISTS (SELECT 1 FROM json_each(review_role) WHERE value = ?)"
             )
             params.append(review_role)
-        c.execute(f"SELECT case_id FROM cases WHERE {' AND '.join(where)}", params)
-        ids = {row[0] for row in c.fetchall()}
+        ids = {
+            row[0]
+            for row in c.execute(
+                f"SELECT case_id FROM cases WHERE {' AND '.join(where)}", params
+            ).fetchall()
+        }
         c.close()
         return ids
 
@@ -89,12 +93,10 @@ def load_cases(case_ids: list[str]) -> list[dict]:
     with _LOCK:
         c = _conn()
         placeholders = ",".join("?" for _ in case_ids)
-        c.execute(
+        rows = c.execute(
             f"SELECT data_json FROM cases WHERE case_id IN ({placeholders})",
             case_ids,
-        )
-        case_map = {
-            json.loads(row[0])["case_id"]: json.loads(row[0]) for row in c.fetchall()
-        }
+        ).fetchall()
+        case_map = {json.loads(row[0])["case_id"]: json.loads(row[0]) for row in rows}
         c.close()
         return [case_map[cid] for cid in case_ids if cid in case_map]
