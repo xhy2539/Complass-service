@@ -37,7 +37,6 @@ def test_cors_middleware_is_configured():
     from app.main import app
 
     cors_middlewares = [
-        m for m in app.user_middleware
-        if m.cls.__name__ == "CORSMiddleware"
+        m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware"
     ]
     assert len(cors_middlewares) == 1
