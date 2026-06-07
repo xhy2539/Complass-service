@@ -35,7 +35,7 @@ def rerank(
     if len(candidates) <= top_k:
         return candidates
 
-    # 精简候选数据，减少 token
+    # 精简候选数据，减少 token（保留检索关键字段用于重排）
     slimmed = []
     for c in candidates:
         slimmed.append(
@@ -44,6 +44,9 @@ def rerank(
                 "review_module": c.get("review_module", ""),
                 "change_pattern": c.get("change_pattern", ""),
                 "risk_name": c.get("risk_name", ""),
+                "check_point": c.get("check_point", ""),
+                "trigger_condition": c.get("trigger_condition", ""),
+                "diff_summary": c.get("diff_summary", ""),
                 "user_intent": c.get("user_intent", ""),
             }
         )

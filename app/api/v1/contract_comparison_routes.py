@@ -242,7 +242,7 @@ async def _run_comparison_task_async(
     db.query(ComparisonDocument).filter(
         ComparisonDocument.comparison_task_id == task_id
     ).delete()
-    db.flush()
+    db.commit()
 
     task.old_file_name = old_doc.file_name
     task.new_file_name = new_doc.file_name
