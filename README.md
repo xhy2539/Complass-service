@@ -1,189 +1,48 @@
-# 合规罗盘后端服务
+# 合规罗盘 (Complass) — 后端服务
 
-合规罗盘后端是基于 FastAPI 的合同审查服务，提供用户认证、合同上传解析、Coze 风险审查、合同版本比对、风险点人工复核、任务查询和审查结果导出能力。
+AI 辅助合同审查工作台。提供单合同风险审查、版本比对、和从修改行为中反向提炼审核规则的
+逆向解析引擎，内置 RAG 语义检索和敏感信息脱敏。
 
-## 当前能力
+## 功能模块
 
-- 用户注册、登录和 Bearer Token 鉴权
-- 单合同上传审查：解析 `docx` / `pdf` / `txt`，保存段落、句子和风险定位信息
-- 双版本合同上传比对：生成句子级 diff，并可调用 Coze 进行语义增强
-- Coze 合同审查工作流接入：先上传文件获取 `file_id`，再调用审查 workflow
-- 规则库数据库化：支持规则 CRUD、CSV 导入、规则版本激活和审查任务规则快照
-- 审查/比对调用 Coze 前执行脱敏，并保留脱敏映射用于结果回填
-- Coze 合同比对工作流接入：基于 `old_text`、`new_text`、`diff_stats`、`diff_texts` 生成增强结果
-- Coze 外层 `data` 字符串 JSON 自动解析和结果归一化
-- 风险点保存、查询、确认、忽略和人工复核备注
-- 审查任务、比对任务、任务风险点列表查询
-- AI 建议采纳后生成优化合同版本，原合同不被覆盖
-- 基于用户编辑后的最终合同文本导出清洁版 `docx`
-- Jenkins Verify 流水线检查：依赖安装、语法检查、应用导入检查
+| 模块 | 说明 |
+| ------ | ------ |
+| 合同审查 | 上传合同 → AI 分析 → 风险点列表 → 人工确认 |
+| 版本比对 | 上传新旧合同 → diff 识别 → Coze 语义增强 |
+| 规则逆向 | 修改前后合同对 → LLM + KB → 候选审核规则 → 纳入入库 |
+| 脱敏服务 | 公司名/电话/邮箱/身份证等 7 类敏感信息过滤+还原 |
+| RAG 检索 | bge-base-zh + FAISS + BM25 + MiniMax re-rank 混合检索 |
+| DOCX 导出 | 原始模板文本替换，保留全部格式 |
+
+详细使用说明见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md)
+
+## 部署
+
+```bash
+cp .env.example .env
+# 编辑 .env 填入 COZE_ACCESS_TOKEN / MINIMAX_API_KEY 等
+docker compose up -d
+
+# 首次构建 RAG 索引
+curl -X POST http://localhost:8000/rebuild
+```
+
+服务端口：
+
+| 服务 | 端口 | 说明 |
+| ------ | ------ | ------ |
+| 前端 Nginx | 80 | SPA + API 代理 |
+| 后端 FastAPI | 8080 | 业务逻辑 |
+| RAG 服务 | 8000 | 语义检索（仅本地） |
+| MySQL | 3306 | 业务数据 |
+| Redis | 6379 | 会话缓存 |
 
 ## 技术栈
 
-- Python 3.11+
-- FastAPI
-- SQLAlchemy
-- Pydantic Settings
-- MySQL / SQLite
-- Coze Workflow API
-- Jenkins / Gerrit Trigger
+Python 3.12 / FastAPI / SQLAlchemy / MySQL 8.0 / Redis 7 / Coze / MiniMax M3
+/ bge-base-zh-v1.5 / FAISS / BM25 / Docker / Jenkins / Gerrit
 
-## 项目结构
+## CI/CD
 
-```text
-app/
-  api/v1/                 # API 路由
-  core/                   # 配置和安全能力
-  models/                 # SQLAlchemy 数据模型和数据库连接
-  schemas/                # 请求和响应模型
-  services/               # 文档解析、Coze 调用、diff 和导出服务
-alembic/                  # 数据库迁移目录
-requirements.txt          # Python 依赖
-Jenkinsfile               # Jenkins Verify 检查流水线
-```
-
-## 本地启动
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-python -m pip install -r requirements.txt
-copy .env.example .env
-uvicorn app.main:app --reload
-```
-
-启动后访问：
-
-- API 文档：`http://127.0.0.1:8000/docs`
-- 健康检查：`http://127.0.0.1:8000/health`
-
-## 环境变量
-
-`.env.example` 提供配置模板：
-
-```env
-APP_ENV=local
-DATABASE_URL=mysql+pymysql://root:password@localhost:3306/complass?charset=utf8mb4
-COZE_API_BASE_URL=https://api.coze.cn
-COZE_ACCESS_TOKEN=
-COZE_COMPARISON_WORKFLOW_ID=7634842444869861416
-COZE_REVIEW_WORKFLOW_ID=7636289402251198473
-COZE_WORKFLOW_TIMEOUT_SECONDS=120
-COZE_UPLOAD_TIMEOUT_SECONDS=120
-MAX_UPLOAD_SIZE_MB=20
-JWT_SECRET_KEY=your-super-secret-key-change-in-production
-JWT_ALGORITHM=HS256
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES=10080
-```
-
-`COZE_ACCESS_TOKEN` 和生产环境 `JWT_SECRET_KEY` 只写入本地或服务器 `.env`，不要提交到 Git。
-
-## 主要接口
-
-所有业务接口统一挂载在 `/api/v1` 下。除注册、登录和 Coze 联调预留接口外，业务任务接口需要携带 Bearer Token。
-
-### 认证
-
-```http
-POST /api/v1/auth/register
-POST /api/v1/auth/login
-```
-
-### 单合同审查
-
-```http
-POST /api/v1/reviews
-GET /api/v1/reviews
-GET /api/v1/reviews/{task_id}
-GET /api/v1/reviews/{task_id}/risks
-POST /api/v1/reviews/{task_id}/export
-POST /api/v1/reviews/{task_id}/suggestions/apply
-GET /api/v1/reviews/{task_id}/optimized-versions
-GET /api/v1/reviews/{task_id}/optimized-versions/{version_id}
-POST /api/v1/reviews/{task_id}/optimized-versions/{version_id}/export
-```
-
-说明：
-
-- `POST /reviews` 上传单份合同文件，支持 `docx`、`pdf`、`txt`
-- `use_coze=true` 时会读取当前激活规则版本、执行脱敏、调用 Coze 审查工作流并保存风险点
-- `POST /reviews/{task_id}/export` 根据前端提交的最终合同文本导出 `docx`
-- `POST /reviews/{task_id}/suggestions/apply` 根据用户采纳的风险建议生成优化合同版本
-
-### 合同版本比对
-
-```http
-POST /api/v1/comparisons
-GET /api/v1/comparisons
-GET /api/v1/comparisons/{task_id}
-GET /api/v1/comparisons/{task_id}/risks
-```
-
-说明：
-
-- `POST /comparisons` 上传旧版和新版合同文件
-- `enhance=true` 时会调用 Coze 比对增强工作流
-- 返回内容包含 diff 统计、差异明细、合同文档信息和比对风险点
-
-### 规则库管理
-
-```http
-GET /api/v1/rules
-POST /api/v1/rules
-PATCH /api/v1/rules/{rule_id}
-DELETE /api/v1/rules/{rule_id}
-PATCH /api/v1/rules/{rule_id}/enabled
-POST /api/v1/rules/import-csv
-GET /api/v1/rule-versions
-POST /api/v1/rule-versions
-POST /api/v1/rule-versions/{version_id}/activate
-```
-
-说明：
-
-- CSV 导入成功后生成草稿规则版本，激活后才参与新审查任务
-- 审查和比对任务会保存当时使用的 `rule_version_id` 和规则快照
-- 没有激活规则版本时，启用 Coze 的审查/比对请求会返回明确错误
-
-### 风险点人工确认
-
-```http
-PATCH /api/v1/risks/{risk_id}/status
-GET /api/v1/risks/{risk_id}
-```
-
-支持的风险状态：
-
-```text
-pending
-confirmed
-ignored
-```
-
-### Coze 联调预留接口
-
-```http
-POST /api/v1/coze/contract/comparison
-POST /api/v1/coze/contract/review
-```
-
-这些接口用于单独联调 Coze 工作流。正式业务流程优先使用 `/reviews` 和 `/comparisons`。
-
-## CI / Gerrit Verify
-
-项目包含 `Jenkinsfile`，用于 Gerrit Patch Set 的 Verify 检查：
-
-1. 创建 Python 虚拟环境
-2. 安装 `requirements.txt`
-3. 执行 `python -m compileall -q app`
-4. 执行 `python -c "from app.main import app; print(app.title)"`
-
-提交到 Gerrit 测试流水线：
-
-```bash
-git push origin HEAD:refs/for/dev
-```
-
-Jenkins 由 Gerrit Trigger 触发后，应在 Gerrit Change 页面回写 `Verified +1` 或 `Verified -1`。
-
-完整字段说明见 `API接口文档-P0.md`。
+每次推送自动触发 Jenkins 流水线：Lint → Format → Type Check → Test (28 cases) → Syntax → Import。
+合并后自动部署。
