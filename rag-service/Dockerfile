@@ -9,7 +9,6 @@ COPY app/ ./app/
 RUN mkdir -p /app/storage
 
 ENV PYTHONUNBUFFERED=1
-ENV HF_ENDPOINT=https://hf-mirror.com
 
 EXPOSE 8000
 
