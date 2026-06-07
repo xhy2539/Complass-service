@@ -1049,14 +1049,6 @@ def send_comparison_card(
                 "style": {"margin_bottom": 16},
             },
             {
-                "tag": "div",
-                "text": {
-                    "content": f"🔍 **差异数量**：{total_risks} 处",
-                    "tag": "lark_md",
-                },
-                "style": {"margin_bottom": 16},
-            },
-            {
                 "tag": "action",
                 "actions": [
                     {
@@ -1232,7 +1224,7 @@ async def create_comparison_task_from_feishu(
             sanitization_status="not_required",
             rules_snapshot_json=[],
             contract_type="通用",
-            enhance=False,
+            enhance=True,
             status=TaskStatus.PENDING,
         )
         db.add(task)
@@ -1249,7 +1241,7 @@ async def create_comparison_task_from_feishu(
             new_name or "unknown",
             old_file_path,
             new_file_path,
-            False,
+            True,
             "通用",
         )
     )
