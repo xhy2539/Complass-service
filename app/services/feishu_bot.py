@@ -1355,7 +1355,7 @@ async def create_comparison_task_from_feishu(
             sanitization_status="not_required",
             rules_snapshot_json=[],
             contract_type="通用",
-            enhance=False,
+            enhance=True,
             status=TaskStatus.PENDING,
         )
         db.add(task)
@@ -1372,7 +1372,7 @@ async def create_comparison_task_from_feishu(
             new_name or "unknown",
             old_file_path,
             new_file_path,
-            False,
+            True,
             "通用",
         )
     )
