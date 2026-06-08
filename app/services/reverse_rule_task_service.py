@@ -200,7 +200,14 @@ def import_candidates(db: Session, task_id: str, candidate_ids: list[str]) -> di
 
     # 更新任务统计和状态
     task = db.query(ReverseRuleTask).filter(ReverseRuleTask.id == task_id).first()
-    pair_count = len(task.contract_pairs_json or []) if task else 0
+    # 来源合同组数 = 实际产出候选规则的合同组数，非上传总数
+    all_candidates = (
+        db.query(ReverseRuleCandidate)
+        .filter(ReverseRuleCandidate.task_id == task_id)
+        .all()
+    )
+    unique_pairs = {c.source_pair_index for c in all_candidates}
+    pair_count = len(unique_pairs)
     if task:
         if task.stats_json:
             task.stats_json = {**task.stats_json, "imported_included": len(imported)}
