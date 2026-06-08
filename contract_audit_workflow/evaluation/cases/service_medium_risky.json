@@ -1,0 +1,9 @@
+{
+  "case_id": "service_medium_risky",
+  "title": "服务合同-中-问题",
+  "contract_type_expected": "服务合同",
+  "length_bucket": "medium",
+  "quality_bucket": "risky",
+  "input_text": "服务合同。甲方委托乙方开发客户管理系统，并提供上线培训和驻场支持。项目分三阶段交付，但各阶段验收标准描述较为原则，仅写满足业务需求。甲方在乙方提交阶段成果后七日内付款，是否需要发票未明确。知识产权条款写明项目成果归属双方另行协商。项目延期时双方友好协商处理。争议解决条款写为协商不成向有管辖权的人民法院起诉。",
+  "tags": ["service", "risky", "medium", "development", "acceptance", "payment", "ip", "dispute"]
+}

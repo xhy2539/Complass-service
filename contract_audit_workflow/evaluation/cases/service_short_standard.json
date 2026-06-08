@@ -1,0 +1,9 @@
+{
+  "case_id": "service_short_standard",
+  "title": "服务合同-短-规范",
+  "contract_type_expected": "服务合同",
+  "length_bucket": "short",
+  "quality_bucket": "standard",
+  "input_text": "服务合同。甲方委托乙方提供系统运维服务，服务期为十二个月。乙方应按照服务目录提供巡检、故障处理和技术支持。甲方按季度在乙方完成服务并提交合规发票后付款。验收标准、保密义务、知识产权归属、违约责任和争议解决条款均已明确。",
+  "tags": ["service", "standard", "short", "maintenance", "invoice", "acceptance"]
+}

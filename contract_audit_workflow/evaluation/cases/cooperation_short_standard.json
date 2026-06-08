@@ -1,0 +1,9 @@
+{
+  "case_id": "cooperation_short_standard",
+  "title": "合作协议-短-规范",
+  "contract_type_expected": "合作协议",
+  "length_bucket": "short",
+  "quality_bucket": "standard",
+  "input_text": "合作协议。甲乙双方就联合市场推广建立合作关系。双方约定合作期限、客户线索共享方式、收益分配、保密义务、退出机制、争议解决及违约责任。涉及客户资料的使用、返还和删除责任均已明确。",
+  "tags": ["cooperation", "standard", "short", "marketing", "revenue_share", "confidentiality"]
+}

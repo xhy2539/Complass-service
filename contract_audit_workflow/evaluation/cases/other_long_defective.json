@@ -1,0 +1,9 @@
+{
+  "case_id": "other_long_defective",
+  "title": "其他-长-故意缺陷",
+  "contract_type_expected": "其他",
+  "length_bucket": "long",
+  "quality_bucket": "defective",
+  "input_text": "数据授权使用协议。甲方授权乙方在一定范围内使用历史数据样本开展内部分析。协议未明确授权期限，仅写在合理期限内使用。数据交付地点、交付方式和验收标准未明确。数据保密、删除、返还、备份清理和违规使用责任写得非常笼统。发生泄露后的赔偿责任、违约责任和处理时限未约定。解除协议后乙方应如何停止使用数据、删除衍生副本和提交销毁证明均未约定。争议解决条款仅写依法解决。该协议不属于采购合同、服务合同或合作协议。",
+  "tags": ["other", "defective", "long", "data", "timeline", "termination", "dispute"]
+}

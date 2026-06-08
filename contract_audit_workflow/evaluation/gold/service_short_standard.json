@@ -1,0 +1,12 @@
+{
+  "case_id": "service_short_standard",
+  "expected_contract_type": "服务合同",
+  "expected_total_rules_optional": null,
+  "expected_counts": {
+    "agreeCount": null,
+    "highlevelriskCount": null,
+    "mediumlevelriskCount": null,
+    "lowlevelriskCount": null
+  },
+  "rule_expectations": []
+}

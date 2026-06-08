@@ -1,0 +1,52 @@
+{
+  "cases": [
+    {
+      "case_file": "purchase_short_standard.json",
+      "gold_file": "purchase_short_standard.json"
+    },
+    {
+      "case_file": "purchase_medium_risky.json",
+      "gold_file": "purchase_medium_risky.json"
+    },
+    {
+      "case_file": "purchase_long_defective.json",
+      "gold_file": "purchase_long_defective.json"
+    },
+    {
+      "case_file": "service_short_standard.json",
+      "gold_file": "service_short_standard.json"
+    },
+    {
+      "case_file": "service_medium_risky.json",
+      "gold_file": "service_medium_risky.json"
+    },
+    {
+      "case_file": "service_long_defective.json",
+      "gold_file": "service_long_defective.json"
+    },
+    {
+      "case_file": "cooperation_short_standard.json",
+      "gold_file": "cooperation_short_standard.json"
+    },
+    {
+      "case_file": "cooperation_medium_risky.json",
+      "gold_file": "cooperation_medium_risky.json"
+    },
+    {
+      "case_file": "cooperation_long_defective.json",
+      "gold_file": "cooperation_long_defective.json"
+    },
+    {
+      "case_file": "other_short_standard.json",
+      "gold_file": "other_short_standard.json"
+    },
+    {
+      "case_file": "other_medium_risky.json",
+      "gold_file": "other_medium_risky.json"
+    },
+    {
+      "case_file": "other_long_defective.json",
+      "gold_file": "other_long_defective.json"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "case_id": "cooperation_medium_risky",
+  "title": "合作协议-中-问题",
+  "contract_type_expected": "合作协议",
+  "length_bucket": "medium",
+  "quality_bucket": "risky",
+  "input_text": "合作协议。甲乙双方拟在渠道拓展、客户拜访和联合推广方面合作。协议约定双方共享商机，但客户保护边界写得较为笼统。收益分配方式仅写按照后续确认结果执行。合作终止后的客户交接、资料返还和费用结算写为另行协商。争议解决条款写为协商不成依法处理。保密条款和违约责任存在，但违约赔偿范围不够明确。",
+  "tags": ["cooperation", "risky", "medium", "customer_protection", "revenue_share", "termination", "dispute"]
+}

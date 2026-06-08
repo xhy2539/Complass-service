@@ -1,0 +1,12 @@
+{
+  "case_id": "cooperation_short_standard",
+  "expected_contract_type": "合作协议",
+  "expected_total_rules_optional": null,
+  "expected_counts": {
+    "agreeCount": null,
+    "highlevelriskCount": null,
+    "mediumlevelriskCount": null,
+    "lowlevelriskCount": null
+  },
+  "rule_expectations": []
+}

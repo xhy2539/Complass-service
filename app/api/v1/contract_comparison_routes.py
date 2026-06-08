@@ -1,6 +1,7 @@
 """合同版本比对路由，支持双文件上传、任务创建、diff 计算和 Coze 语义增强。"""
 
 import asyncio
+import json
 import logging
 import uuid
 from datetime import datetime
@@ -53,6 +54,20 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 def _uuid() -> str:
     """生成 UUID。"""
     return str(uuid.uuid4())
+
+
+def _ensure_list(value) -> list:
+    if isinstance(value, list):
+        return value
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, list) else []
+        except Exception:
+            return []
+    return []
 
 
 def validate_file(file: UploadFile) -> None:
@@ -175,6 +190,39 @@ def _process_comparison_task_background(
             )
         )
         db.commit()
+        try:
+            current_user = db.query(User).filter(User.id == user_id).first()
+            open_id = (
+                (current_user.feishu_open_id or "").strip() if current_user else ""
+            )
+            if open_id:
+                task = (
+                    db.query(ComparisonTask)
+                    .filter(
+                        ComparisonTask.id == task_id, ComparisonTask.user_id == user_id
+                    )
+                    .first()
+                )
+                from app.services.feishu_bot import send_comparison_completed_card
+
+                send_comparison_completed_card(
+                    open_id,
+                    task_id,
+                    (
+                        task.old_file_name
+                        if task and task.old_file_name
+                        else old_file_name
+                    ),
+                    (
+                        task.new_file_name
+                        if task and task.new_file_name
+                        else new_file_name
+                    ),
+                )
+        except Exception as e:
+            logger.error(
+                "[Comparison] 发送飞书比对完成卡片失败 task_id=%s: %s", task_id, e
+            )
     except Exception as e:
         db.rollback()
         task = db.query(ComparisonTask).filter(ComparisonTask.id == task_id).first()
@@ -608,9 +656,9 @@ async def get_comparison_task(
         "success": True,
         "task": task.to_dict(),
         "documents": [doc.to_dict() for doc in documents],
-        "diff_details": task.diff_details_json,
+        "diff_details": _ensure_list(task.diff_details_json),
         "risk_points": [rp.to_dict() for rp in risk_points],
-        "coze_enhanced": task.coze_enhanced,
+        "coze_enhanced": _ensure_list(task.coze_enhanced),
         "message": "查询成功",
     }
 

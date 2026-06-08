@@ -1,0 +1,9 @@
+{
+  "case_id": "purchase_long_defective",
+  "title": "采购合同-长-故意缺陷",
+  "contract_type_expected": "采购合同",
+  "length_bucket": "long",
+  "quality_bucket": "defective",
+  "input_text": "采购合同。甲方向乙方采购生产线设备、备件和控制系统软件。合同正文约定设备名称、型号和数量，但未写明交付地点的详细地址，仅写由甲方另行通知。乙方完成交付后即可申请付款，甲方应及时付款。发票事项由双方后续协商。设备安装调试后是否需要最终验收未明确，验收标准仅写达到预期效果。乙方对设备的知识产权和软件源代码归属未约定，保密条款仅写双方应保密。违约责任条款只写违约方承担责任。解除合同后设备拆除、资料返还、已付款项结算和数据删除均由双方协商处理。争议解决条款只写协商不成依法处理。合同履行期限写为在合理期限内完成，交付延期的后果未明确。",
+  "tags": ["purchase", "defective", "long", "payment", "invoice", "acceptance", "ip", "confidentiality", "termination", "dispute", "delivery_location", "timeline"]
+}
