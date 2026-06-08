@@ -1,0 +1,9 @@
+{
+  "case_id": "purchase_short_standard",
+  "title": "采购合同-短-规范",
+  "contract_type_expected": "采购合同",
+  "length_bucket": "short",
+  "quality_bucket": "standard",
+  "input_text": "采购合同。甲方向乙方采购网络交换机十台，型号和数量见附件。乙方应于签约后十五日内送达甲方指定地点，甲方在收货后五个工作日内完成验收。甲方在验收合格并收到增值税专用发票后十个工作日内付款。双方约定质保期为一年，违约责任和争议解决条款完整明确。",
+  "tags": ["purchase", "standard", "short", "payment", "acceptance", "invoice"]
+}

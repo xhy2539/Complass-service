@@ -1,0 +1,9 @@
+{
+  "case_id": "service_long_defective",
+  "title": "服务合同-长-故意缺陷",
+  "contract_type_expected": "服务合同",
+  "length_bucket": "long",
+  "quality_bucket": "defective",
+  "input_text": "服务合同。甲方委托乙方实施数据中台建设、接口联调、系统部署和后续运维。合同未明确项目的最终交付清单，仅写根据实际情况提供成果。付款安排写为签约后支付首款、乙方请款后支付尾款，未明确验收合格和收到发票是否为付款前提。发票类型、税率和开票主体均未明确。数据保密条款仅写乙方应注意保密，未约定数据删除、返还和备份清理。知识产权、源代码所有权、二次开发权和第三方侵权责任写为双方后续协商。服务地点写为以甲方通知为准。项目延期、整改次数、违约金和解除后的资料返还均未明确。争议解决条款仅写依法解决。履行期限写为尽量按计划完成。",
+  "tags": ["service", "defective", "long", "payment", "invoice", "data", "ip", "delivery_location", "termination", "timeline", "dispute"]
+}

@@ -1,0 +1,39 @@
+{
+  "case_id": "cooperation_medium_risky",
+  "expected_contract_type": "合作协议",
+  "expected_total_rules_optional": null,
+  "expected_counts": {
+    "agreeCount": null,
+    "highlevelriskCount": null,
+    "mediumlevelriskCount": null,
+    "lowlevelriskCount": null
+  },
+  "rule_expectations": [
+    {
+      "rule_code": "",
+      "expected_present": true,
+      "risk_gold": "medium",
+      "risk_label_gold": "中风险",
+      "action_type_gold": "replace",
+      "key_aliases": ["收益分配不明确", "分配方式不明确"],
+      "content_mode_gold": "quote",
+      "content_anchor_optional": "收益分配方式仅写按照后续确认结果执行",
+      "must_not_invent_numbers": true,
+      "advice_expectation": "收益分配",
+      "replace_text_expectation": "required"
+    },
+    {
+      "rule_code": "",
+      "expected_present": true,
+      "risk_gold": "medium",
+      "risk_label_gold": "中风险",
+      "action_type_gold": "replace",
+      "key_aliases": ["解除终止不明确", "费用结算不明确"],
+      "content_mode_gold": "quote",
+      "content_anchor_optional": "合作终止后的客户交接、资料返还和费用结算写为另行协商",
+      "must_not_invent_numbers": true,
+      "advice_expectation": "终止",
+      "replace_text_expectation": "required"
+    }
+  ]
+}

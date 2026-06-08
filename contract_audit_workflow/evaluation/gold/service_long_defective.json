@@ -1,0 +1,52 @@
+{
+  "case_id": "service_long_defective",
+  "expected_contract_type": "服务合同",
+  "expected_total_rules_optional": null,
+  "expected_counts": {
+    "agreeCount": null,
+    "highlevelriskCount": null,
+    "mediumlevelriskCount": null,
+    "lowlevelriskCount": null
+  },
+  "rule_expectations": [
+    {
+      "rule_code": "",
+      "expected_present": true,
+      "risk_gold": "high",
+      "risk_label_gold": "高风险",
+      "action_type_gold": "append",
+      "key_aliases": ["数据删除缺失", "数据返还缺失"],
+      "content_mode_gold": "missing_clause",
+      "content_anchor_optional": "",
+      "must_not_invent_numbers": true,
+      "advice_expectation": "数据",
+      "replace_text_expectation": "required"
+    },
+    {
+      "rule_code": "",
+      "expected_present": true,
+      "risk_gold": "high",
+      "risk_label_gold": "高风险",
+      "action_type_gold": "append",
+      "key_aliases": ["发票条款缺失", "开票信息不明确"],
+      "content_mode_gold": "missing_clause",
+      "content_anchor_optional": "",
+      "must_not_invent_numbers": true,
+      "advice_expectation": "发票",
+      "replace_text_expectation": "required"
+    },
+    {
+      "rule_code": "",
+      "expected_present": true,
+      "risk_gold": "medium",
+      "risk_label_gold": "中风险",
+      "action_type_gold": "replace",
+      "key_aliases": ["履行期限不明确", "履约期限不明确"],
+      "content_mode_gold": "quote",
+      "content_anchor_optional": "履行期限写为尽量按计划完成",
+      "must_not_invent_numbers": true,
+      "advice_expectation": "履行期限",
+      "replace_text_expectation": "required"
+    }
+  ]
+}

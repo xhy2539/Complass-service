@@ -1,0 +1,9 @@
+{
+  "case_id": "purchase_medium_risky",
+  "title": "采购合同-中-问题",
+  "contract_type_expected": "采购合同",
+  "length_bucket": "medium",
+  "quality_bucket": "risky",
+  "input_text": "采购合同。甲方向乙方采购一批实验设备及配套软件。设备清单、数量和总价由附件确认。乙方负责运输、安装和调试。甲方在乙方提交送货单后五日内支付合同总价的百分之八十，剩余款项在双方后续协商后支付。发票开具时间另行协商。设备到货后由甲方组织验收，但验收标准仅写明以正常使用为准。双方如发生争议，由有管辖权的人民法院处理。保密义务、违约责任和质保义务另有约定。",
+  "tags": ["purchase", "risky", "medium", "payment", "invoice", "acceptance", "dispute"]
+}

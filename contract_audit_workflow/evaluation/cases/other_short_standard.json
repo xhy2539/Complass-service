@@ -1,0 +1,9 @@
+{
+  "case_id": "other_short_standard",
+  "title": "其他-短-规范",
+  "contract_type_expected": "其他",
+  "length_bucket": "short",
+  "quality_bucket": "standard",
+  "input_text": "场地借用协议。甲方同意将会议室借用给乙方举办内部培训，借用期限、使用时段、场地维护责任、安全责任和争议解决条款均已明确。双方不涉及采购、服务开发或商务合作收益分配。",
+  "tags": ["other", "standard", "short", "site_use"]
+}
