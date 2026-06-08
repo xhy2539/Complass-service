@@ -92,7 +92,11 @@ def process_task_async(task_id: str) -> None:
             "ignored": 0,
             "pending": len(rules),
         }
-        for i, rule in enumerate(rules):
+        pair_name_to_index: dict[str, int] = {}
+        for idx, p in enumerate(pairs):
+            pair_name_to_index[p.get("pair_name", f"pair_{idx}")] = idx
+
+        for rule in rules:
             traces = rule.get("traces", [])
             for trace in traces:
                 if trace.get("evidence_before"):
@@ -103,6 +107,11 @@ def process_task_async(task_id: str) -> None:
                     trace["evidence_after"] = restore_text_from_mapping(
                         trace["evidence_after"], all_mappings
                     )
+            # 从 traces 中提取来源合同组序号
+            source_index = pair_name_to_index.get(
+                traces[0].get("pair_id", "") if traces else "",
+                0,
+            )
             candidate = ReverseRuleCandidate(
                 id=_uuid(),
                 task_id=task_id,
@@ -118,7 +127,7 @@ def process_task_async(task_id: str) -> None:
                 ),
                 review_perspective=rule.get("review_perspective", "通用"),
                 traces_json=traces,
-                source_pair_index=i,
+                source_pair_index=source_index,
                 decision="pending",
                 confidence=rule.get("confidence"),
             )
