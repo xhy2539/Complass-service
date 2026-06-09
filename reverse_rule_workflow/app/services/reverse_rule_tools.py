@@ -122,8 +122,10 @@ def build_context_pack(
     before_text: str,
     after_text: str,
     diff: DiffClause,
+    context_index: ContractContextIndex | None = None,
 ) -> ContextPack:
-    context_index = split_and_index_contract(pair_id, before_text, after_text)
+    if context_index is None:
+        context_index = split_and_index_contract(pair_id, before_text, after_text)
     query = _context_query(diff)
     local = get_local_context(context_index, diff)
     related = semantic_context_search(context_index, query, top_k=4) if query else []
@@ -165,6 +167,10 @@ def validate_evidence(
         ]
     )
     for trace in candidate_rule.traces:
+        if trace.source_diff_id and trace.source_diff_id != diff.diff_id:
+            return False
+        if not trace.source_diff_id:
+            return False
         if trace.evidence_before and trace.evidence_before not in evidence_pool:
             return False
         if trace.evidence_after and trace.evidence_after not in evidence_pool:

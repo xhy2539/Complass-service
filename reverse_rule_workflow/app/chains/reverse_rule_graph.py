@@ -2,6 +2,9 @@ import json
 import logging
 import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import as_completed
 from pathlib import Path
 from typing import Any
 from typing import Callable
@@ -31,6 +34,7 @@ from app.services.diff_service import diff_contract_pair
 from app.services.diff_service import split_and_index_contract
 from app.services.query_builder import build_retrieval_queries
 from app.services.reverse_rule_tools import build_context_pack
+from app.services.reverse_rule_tools import validate_evidence
 from app.services.review_perspective import normalize_review_perspective
 from app.services.rule_merger import merge_candidate_rules
 
@@ -122,20 +126,33 @@ def generate_rules_for_pair(
     diff_result: DiffResult,
     retrieved_cases: list[RetrievedCase],
     base_info: ContractBaseInfo | None = None,
+    context_packs: dict[str, Any] | None = None,
 ) -> list[CandidateRuleForDB]:
     if _has_llm_credentials():
-        structured_rules = _try_generate_with_structured_llm(
-            pair, diff_result, retrieved_cases, base_info
-        )
-        if structured_rules is not None and len(structured_rules) > 0:
-            return structured_rules
+        config = _resolve_chat_model_config()
+        if _supports_structured_output(config):
+            structured_rules = _try_generate_with_structured_llm(
+                pair,
+                diff_result,
+                retrieved_cases,
+                base_info,
+                context_packs=context_packs,
+            )
+            if structured_rules is not None and len(structured_rules) > 0:
+                return structured_rules
         # structured output failed or returned empty — try plain JSON text
         text_rules = _try_generate_rules_with_text_llm(
-            pair, diff_result, retrieved_cases, base_info
+            pair, diff_result, retrieved_cases, base_info, context_packs=context_packs
         )
         if text_rules is not None and len(text_rules) > 0:
             return text_rules
     return _generate_rules_with_stub(pair, diff_result, retrieved_cases, base_info)
+
+
+def _supports_structured_output(config: dict[str, str | None]) -> bool:
+    if os.getenv("REVERSE_RULE_DISABLE_STRUCTURED_OUTPUT") == "1":
+        return False
+    return config.get("provider") != "minimax"
 
 
 def _try_generate_rules_with_text_llm(
@@ -143,6 +160,7 @@ def _try_generate_rules_with_text_llm(
     diff_result: DiffResult,
     retrieved_cases: list[RetrievedCase],
     base_info: ContractBaseInfo | None = None,
+    context_packs: dict[str, Any] | None = None,
 ) -> list[CandidateRuleForDB] | None:
     """用普通 JSON 文本方式调用 LLM，适用于不支持 structured output 的模型。"""
     config = _resolve_chat_model_config()
@@ -183,6 +201,7 @@ def _try_generate_rules_with_text_llm(
             diff_result=diff_result,
             retrieved_cases=retrieved_cases,
             base_info=base_info,
+            context_packs=context_packs,
         )
         _logger = logging.getLogger(__name__)
         if raw is None:
@@ -204,6 +223,11 @@ def _try_generate_rules_with_text_llm(
 def validate_candidate_rules(
     rules: list[CandidateRuleForDB],
     current_pair_id: str,
+    diff_result: DiffResult | None = None,
+    pair: ContractPair | None = None,
+    context_packs: dict[str, Any] | None = None,
+    context_index: ContractContextIndex | None = None,
+    context_packs_lock: threading.Lock | None = None,
 ) -> list[CandidateRuleForDB]:
     valid_rules: list[CandidateRuleForDB] = []
     for rule in rules:
@@ -224,8 +248,52 @@ def validate_candidate_rules(
             continue
         if not any(trace.pair_id == current_pair_id for trace in parsed.traces):
             continue
+        if diff_result is not None and not _rule_evidence_matches_diff_result(
+            parsed,
+            diff_result,
+            pair,
+            context_packs=context_packs,
+            context_index=context_index,
+            context_packs_lock=context_packs_lock,
+        ):
+            continue
         valid_rules.append(parsed)
     return valid_rules
+
+
+def _rule_evidence_matches_diff_result(
+    rule: CandidateRuleForDB,
+    diff_result: DiffResult,
+    pair: ContractPair | None = None,
+    context_packs: dict[str, Any] | None = None,
+    context_index: ContractContextIndex | None = None,
+    context_packs_lock: threading.Lock | None = None,
+) -> bool:
+    diffs_by_id = {
+        diff.diff_id: diff for diff in diff_result.changed_clauses if diff.diff_id
+    }
+    context_by_diff_id = context_packs if context_packs is not None else {}
+    for trace in rule.traces:
+        if trace.pair_id != diff_result.pair_id:
+            continue
+        if not trace.source_diff_id:
+            return False
+        diff = diffs_by_id.get(trace.source_diff_id)
+        if diff is None:
+            return False
+        context_pack = None
+        if pair is not None:
+            context_pack = _get_context_pack(
+                pair,
+                diff,
+                context_packs=context_by_diff_id,
+                context_index=context_index,
+                context_packs_lock=context_packs_lock,
+            )
+        single_trace_rule = rule.model_copy(update={"traces": [trace]})
+        if not validate_evidence(single_trace_rule, diff, context_pack):
+            return False
+    return True
 
 
 def _pair_prompt_payload(pair: ContractPair) -> dict[str, Any]:
@@ -237,16 +305,64 @@ def _pair_prompt_payload(pair: ContractPair) -> dict[str, Any]:
 
 
 def _context_prompt_payload(
-    pair: ContractPair, diff_result: DiffResult
+    pair: ContractPair,
+    diff_result: DiffResult,
+    context_packs: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     payload: list[dict[str, Any]] = []
     for diff in diff_result.changed_clauses:
         if not diff.is_substantive:
             continue
-        context_pack = build_context_pack(
-            pair.pair_id, pair.before_text, pair.after_text, diff
+        context_pack = _get_context_pack(pair, diff, context_packs)
+        payload.append(_slim_context_pack_payload(context_pack, diff))
+    return payload
+
+
+def _get_context_pack(
+    pair: ContractPair,
+    diff: Any,
+    context_packs: dict[str, Any] | None = None,
+    context_index: ContractContextIndex | None = None,
+    context_packs_lock: threading.Lock | None = None,
+) -> Any:
+    if context_packs is None:
+        return build_context_pack(
+            pair.pair_id,
+            pair.before_text,
+            pair.after_text,
+            diff,
+            context_index=context_index,
         )
-        payload.append(context_pack.model_dump())
+
+    # Fast path: already cached (safe read under GIL)
+    if diff.diff_id in context_packs:
+        return context_packs[diff.diff_id]
+
+    context_pack = build_context_pack(
+        pair.pair_id,
+        pair.before_text,
+        pair.after_text,
+        diff,
+        context_index=context_index,
+    )
+
+    # Check-insert under lock to avoid duplicate builds across threads
+    if context_packs_lock is not None:
+        with context_packs_lock:
+            if diff.diff_id not in context_packs:
+                context_packs[diff.diff_id] = context_pack
+    else:
+        context_packs[diff.diff_id] = context_pack
+
+    return context_packs[diff.diff_id]
+
+
+def _slim_context_pack_payload(context_pack: Any, diff: Any) -> dict[str, Any]:
+    payload = context_pack.model_dump()
+    payload["related_context"] = payload.get("related_context", [])[:2]
+    payload["outline"] = (
+        [diff.review_module] if getattr(diff, "review_module", None) else []
+    )
     return payload
 
 
@@ -255,20 +371,122 @@ def process_pair(
     diff_result: DiffResult,
     base_info: ContractBaseInfo | None = None,
     rule_generator: RuleGenerator | None = None,
+    context_index: ContractContextIndex | None = None,
 ) -> list[CandidateRuleForDB]:
     enriched_pair = pair_with_base_info(pair, base_info)
-    queries = build_retrieval_queries(
-        diff_result, enriched_pair.contract_type, enriched_pair.review_role
-    )
-    retrieved_cases = retrieve_cases_for_diff(
-        queries,
-        diff_result,
-        contract_type=enriched_pair.contract_type,
-        review_role=enriched_pair.review_role,
-    )
-    generator = rule_generator or generate_rules_for_pair
-    candidate_rules = generator(enriched_pair, diff_result, retrieved_cases, base_info)
-    return validate_candidate_rules(candidate_rules, pair.pair_id)
+    substantive_diffs = [
+        diff for diff in diff_result.changed_clauses if diff.is_substantive
+    ]
+    if not substantive_diffs:
+        return []
+
+    context_packs: dict[str, Any] = {}
+    context_packs_lock = threading.Lock()
+
+    # Pre-build all context packs in the main thread to avoid duplicate
+    # builds and concurrent dict writes across ThreadPoolExecutor workers.
+    if rule_generator is None:
+        for diff in substantive_diffs:
+            _get_context_pack(
+                enriched_pair,
+                diff,
+                context_packs,
+                context_index=context_index,
+            )
+
+    def process_single_diff(diff: Any) -> list[CandidateRuleForDB]:
+        single_diff_result = DiffResult(
+            pair_id=diff_result.pair_id,
+            changed_clauses=[diff],
+        )
+        queries = build_retrieval_queries(
+            single_diff_result,
+            enriched_pair.contract_type,
+            enriched_pair.review_role,
+        )
+        retrieved_cases = retrieve_cases_for_diff(
+            queries,
+            single_diff_result,
+            contract_type=enriched_pair.contract_type,
+            review_role=enriched_pair.review_role,
+        )
+        if rule_generator is None:
+            candidate_rules = generate_rules_for_pair(
+                enriched_pair,
+                single_diff_result,
+                retrieved_cases,
+                base_info,
+                context_packs=context_packs,
+            )
+        else:
+            candidate_rules = rule_generator(
+                enriched_pair,
+                single_diff_result,
+                retrieved_cases,
+                base_info,
+            )
+        return validate_candidate_rules(
+            candidate_rules,
+            pair.pair_id,
+            single_diff_result,
+            enriched_pair,
+            context_packs=context_packs,
+            context_index=context_index,
+            context_packs_lock=context_packs_lock,
+        )
+
+    concurrency = min(_resolve_agent_concurrency(), len(substantive_diffs))
+    if concurrency <= 1:
+        return [
+            rule
+            for diff in substantive_diffs
+            for rule in _process_single_diff_safely(process_single_diff, diff)
+        ]
+
+    indexed_rules: dict[int, list[CandidateRuleForDB]] = {}
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        future_to_index = {
+            executor.submit(process_single_diff, diff): index
+            for index, diff in enumerate(substantive_diffs)
+        }
+        for future in as_completed(future_to_index):
+            index = future_to_index[future]
+            try:
+                indexed_rules[index] = future.result()
+            except Exception as exc:
+                _logger = logging.getLogger(__name__)
+                _logger.warning(
+                    "[ReverseRule] diff-level generation failed for %s: %s",
+                    substantive_diffs[index].diff_id,
+                    str(exc)[:200],
+                )
+                indexed_rules[index] = []
+
+    return [rule for index in sorted(indexed_rules) for rule in indexed_rules[index]]
+
+
+def _process_single_diff_safely(
+    process_single_diff: Callable[[Any], list[CandidateRuleForDB]],
+    diff: Any,
+) -> list[CandidateRuleForDB]:
+    try:
+        return process_single_diff(diff)
+    except Exception as exc:
+        _logger = logging.getLogger(__name__)
+        _logger.warning(
+            "[ReverseRule] diff-level generation failed for %s: %s",
+            getattr(diff, "diff_id", "<unknown>"),
+            str(exc)[:200],
+        )
+        return []
+
+
+def _resolve_agent_concurrency() -> int:
+    try:
+        value = int(os.getenv("REVERSE_RULE_AGENT_CONCURRENCY", "3"))
+    except ValueError:
+        return 3
+    return max(1, value)
 
 
 def process_all_pairs(
@@ -276,12 +494,17 @@ def process_all_pairs(
     diff_results: list[DiffResult],
     base_infos: list[ContractBaseInfo],
     rule_generator: RuleGenerator | None = None,
+    context_indexes: list[ContractContextIndex] | None = None,
 ) -> list[CandidateRuleForDB]:
     rules: list[CandidateRuleForDB] = []
     diffs_by_pair_id = {
         diff_result.pair_id: diff_result for diff_result in diff_results
     }
     base_infos_by_pair_id = {base_info.pair_id: base_info for base_info in base_infos}
+    context_indexes_by_pair_id = {
+        context_index.pair_id: context_index
+        for context_index in (context_indexes or [])
+    }
     for pair in pairs:
         diff_result = diffs_by_pair_id.get(pair.pair_id)
         if diff_result is None:
@@ -292,6 +515,7 @@ def process_all_pairs(
                 diff_result,
                 base_infos_by_pair_id.get(pair.pair_id),
                 rule_generator=rule_generator,
+                context_index=context_indexes_by_pair_id.get(pair.pair_id),
             )
         )
     return rules
@@ -387,6 +611,7 @@ def _process_all_pairs_node(state: ReverseRuleState) -> ReverseRuleState:
             state.get("diff_results", []),
             state.get("base_infos", []),
             rule_generator=state.get("rule_generator"),
+            context_indexes=state.get("context_indexes", []),
         )
     }
 
@@ -440,6 +665,7 @@ def _generate_rules_with_stub(
                 traces=[
                     RuleExtractionTrace(
                         pair_id=pair.pair_id,
+                        source_diff_id=clause.diff_id,
                         evidence_before=clause.before,
                         evidence_after=clause.after,
                         diff_summary=clause.diff_summary,
@@ -457,6 +683,7 @@ def _try_generate_with_structured_llm(
     diff_result: DiffResult,
     retrieved_cases: list[RetrievedCase],
     base_info: ContractBaseInfo | None = None,
+    context_packs: dict[str, Any] | None = None,
 ) -> list[CandidateRuleForDB] | None:
     try:
         from langchain_core.prompts import ChatPromptTemplate
@@ -505,7 +732,9 @@ def _try_generate_with_structured_llm(
                 ),
                 "diff_json": json.dumps(diff_result.model_dump(), ensure_ascii=False),
                 "context_json": json.dumps(
-                    _context_prompt_payload(pair, diff_result),
+                    _context_prompt_payload(
+                        pair, diff_result, context_packs=context_packs
+                    ),
                     ensure_ascii=False,
                 ),
                 "cases_json": json.dumps(
@@ -529,6 +758,7 @@ def _try_generate_with_structured_llm(
             diff_result=diff_result,
             retrieved_cases=retrieved_cases,
             base_info=base_info,
+            context_packs=context_packs,
         )
         if raw_response is None:
             return None
@@ -601,6 +831,7 @@ def _try_generate_minimax_json_text(
     diff_result: DiffResult,
     retrieved_cases: list[RetrievedCase],
     base_info: ContractBaseInfo | None = None,
+    context_packs: dict[str, Any] | None = None,
 ) -> str | None:
     if llm is None or prompt is None:
         return None
@@ -614,7 +845,9 @@ def _try_generate_minimax_json_text(
                 ),
                 "diff_json": json.dumps(diff_result.model_dump(), ensure_ascii=False),
                 "context_json": json.dumps(
-                    _context_prompt_payload(pair, diff_result),
+                    _context_prompt_payload(
+                        pair, diff_result, context_packs=context_packs
+                    ),
                     ensure_ascii=False,
                 ),
                 "cases_json": json.dumps(
@@ -699,12 +932,22 @@ def _coerce_llm_rule_data(
     )
     data.setdefault("default_risk_level", "中")
 
+    if data.get("traces") and pair is not None and diff_result is not None:
+        data["traces"] = [
+            _coerce_trace_source_diff_id(
+                trace, pair, diff_result, data.get("review_module")
+            )
+            for trace in data.get("traces", [])
+            if isinstance(trace, dict)
+        ]
+
     if not data.get("traces") and pair is not None and diff_result is not None:
         clause = _best_trace_clause(diff_result, data.get("review_module"))
         if clause is not None:
             data["traces"] = [
                 {
                     "pair_id": pair.pair_id,
+                    "source_diff_id": clause.diff_id,
                     "evidence_before": clause.before,
                     "evidence_after": clause.after,
                     "diff_summary": clause.diff_summary,
@@ -713,6 +956,57 @@ def _coerce_llm_rule_data(
                 }
             ]
     return data
+
+
+def _coerce_trace_source_diff_id(
+    trace: dict[str, Any],
+    pair: ContractPair,
+    diff_result: DiffResult,
+    review_module: str | None,
+) -> dict[str, Any]:
+    data = dict(trace)
+    data.setdefault("pair_id", pair.pair_id)
+    if data.get("source_diff_id"):
+        return data
+    clause = _unique_trace_clause(
+        diff_result,
+        data.get("evidence_before", ""),
+        data.get("evidence_after", ""),
+        review_module,
+    )
+    if clause is not None:
+        data["source_diff_id"] = clause.diff_id
+    return data
+
+
+def _unique_trace_clause(
+    diff_result: DiffResult,
+    evidence_before: str,
+    evidence_after: str,
+    review_module: str | None,
+):
+    candidates = [
+        clause
+        for clause in diff_result.changed_clauses
+        if clause.is_substantive
+        and (not review_module or clause.review_module == review_module)
+        and _trace_evidence_matches_clause(evidence_before, evidence_after, clause)
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _trace_evidence_matches_clause(
+    evidence_before: str,
+    evidence_after: str,
+    clause: Any,
+) -> bool:
+    before = str(evidence_before or "")
+    after = str(evidence_after or "")
+    clause_before = str(clause.before or "")
+    clause_after = str(clause.after or "")
+    before_ok = not before or before in clause_before or clause_before in before
+    after_ok = not after or after in clause_after or clause_after in after
+    return before_ok and after_ok
 
 
 def _best_trace_clause(diff_result: DiffResult, review_module: str | None):
@@ -754,6 +1048,7 @@ def _rule_from_diff_without_case(pair: ContractPair, clause: Any) -> CandidateRu
         traces=[
             RuleExtractionTrace(
                 pair_id=pair.pair_id,
+                source_diff_id=clause.diff_id,
                 evidence_before=clause.before or "原合同未约定对应内容",
                 evidence_after=clause.after or "修改后未保留对应内容",
                 diff_summary=clause.diff_summary,

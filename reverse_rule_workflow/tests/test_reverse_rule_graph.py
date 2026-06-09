@@ -6,15 +6,18 @@ import re
 import pytest
 
 from app.chains.reverse_rule_graph import (
+    _context_prompt_payload,
     _has_llm_credentials,
     _identify_base_info_node,
     _parse_rule_batch_from_text,
     _resolve_chat_model_config,
     build_reverse_rule_graph,
+    process_pair,
     run_reverse_rule_extraction,
 )
-from app.models.reverse_rule import CandidateRuleForDB, ContractPair
+from app.models.reverse_rule import CandidateRuleForDB, ContractPair, DiffClause, DiffResult
 from app.services.base_info import identify_base_info_for_pair
+from app.services.reverse_rule_tools import validate_evidence
 from app.services.rule_code import to_rule_record
 
 
@@ -61,6 +64,31 @@ def liability_pair(pair_id: str = "pair-2") -> dict:
     }
 
 
+def _candidate_rule_for_diff(pair: ContractPair, diff: DiffClause) -> CandidateRuleForDB:
+    return CandidateRuleForDB(
+        contract_type=pair.contract_type or "服务合同",
+        review_perspective="通用",
+        review_module=diff.review_module,
+        risk_name=f"{diff.review_module}风险",
+        check_point=f"检查{diff.review_module}是否明确。",
+        trigger_condition=f"{diff.review_module}缺失关键约定时触发。",
+        default_risk_level="中",
+        suggestion_template=f"建议完善{diff.review_module}。",
+        example_clause=diff.before or diff.after,
+        traces=[
+            {
+                "pair_id": pair.pair_id,
+                "source_diff_id": diff.diff_id,
+                "evidence_before": diff.before,
+                "evidence_after": diff.after,
+                "diff_summary": diff.diff_summary,
+                "user_intent": "根据单个 diff 生成候选规则。",
+                "confidence": 0.78,
+            }
+        ],
+    )
+
+
 def test_single_contract_pair_generates_candidate_rule():
     result = run_reverse_rule_extraction([payment_pair()])
 
@@ -89,6 +117,105 @@ def test_two_contract_pairs_generate_and_merge_rules():
         for trace in rule["traces"]
     }
     assert trace_pair_ids == {"pair-a", "pair-b"}
+
+
+def test_process_pair_calls_rule_generator_once_per_substantive_diff(monkeypatch):
+    import app.kb.retriever as retriever
+    from app.services.diff_service import diff_contract_pair
+
+    monkeypatch.setattr(retriever, "retrieve_reverse_rule_cases", lambda *args, **kwargs: [])
+    pair = ContractPair(
+        pair_id="pair-multi-diff",
+        before_text="\n".join(
+            [
+                "甲方应在验收后90日内支付服务费。",
+                "乙方交付成果及源代码归甲方所有。",
+            ]
+        ),
+        after_text="\n".join(
+            [
+                "甲方应在验收并收到合法有效发票后30日内支付服务费。",
+                "乙方既有组件归乙方所有，甲方获得项目交付成果使用权。",
+            ]
+        ),
+        contract_type="服务合同",
+        review_role="通用",
+    )
+    diff_result = diff_contract_pair(pair)
+    substantive_diffs = [
+        diff for diff in diff_result.changed_clauses if diff.is_substantive
+    ]
+    called_diff_ids: list[str] = []
+
+    def generator(
+        current_pair: ContractPair,
+        current_diff_result: DiffResult,
+        retrieved_cases,
+        base_info=None,
+    ):
+        assert len(current_diff_result.changed_clauses) == 1
+        diff = current_diff_result.changed_clauses[0]
+        called_diff_ids.append(diff.diff_id)
+        return [_candidate_rule_for_diff(current_pair, diff)]
+
+    rules = process_pair(pair, diff_result, rule_generator=generator)
+
+    assert len(called_diff_ids) == len(substantive_diffs)
+    assert set(called_diff_ids) == {diff.diff_id for diff in substantive_diffs}
+    assert {rule.traces[0].source_diff_id for rule in rules} == set(called_diff_ids)
+
+
+def test_context_prompt_payload_reuses_slim_cached_context(monkeypatch):
+    import app.chains.reverse_rule_graph as graph
+    from app.services.reverse_rule_tools import ContextPack
+    from app.services.reverse_rule_tools import ContextSnippet
+
+    calls: list[str] = []
+    diff = DiffClause(
+        diff_id="pair-1-diff-1",
+        review_module="付款条款",
+        change_type="更改",
+        before="甲方应在验收后90日内付款。",
+        after="甲方应在验收后30日内付款。",
+        diff_summary="付款期限缩短。",
+        is_substantive=True,
+    )
+    pair = ContractPair(
+        pair_id="pair-1",
+        before_text=diff.before,
+        after_text=diff.after,
+        contract_type="服务合同",
+    )
+    diff_result = DiffResult(pair_id=pair.pair_id, changed_clauses=[diff])
+    cached_pack = ContextPack(
+        diff_id=diff.diff_id,
+        local_context=[
+            ContextSnippet(text=diff.before, location="before:1"),
+            ContextSnippet(text=diff.after, location="after:1"),
+        ],
+        related_context=[
+            ContextSnippet(text=f"相关片段 {index}", location=f"after:{index}", score=0.5)
+            for index in range(4)
+        ],
+        references=[ContextSnippet(text="附件付款安排", location="after:9")],
+        outline=["第一条 付款", "第二条 验收", "第三条 保密"],
+    )
+
+    def fail_if_rebuilt(*args, **kwargs):
+        calls.append("rebuilt")
+        raise AssertionError("cached context pack should be reused")
+
+    monkeypatch.setattr(graph, "build_context_pack", fail_if_rebuilt)
+    payload = _context_prompt_payload(
+        pair,
+        diff_result,
+        context_packs={diff.diff_id: cached_pack},
+    )
+
+    assert calls == []
+    assert payload[0]["diff_id"] == diff.diff_id
+    assert len(payload[0]["related_context"]) == 2
+    assert payload[0]["outline"] == ["付款条款"]
 
 
 def test_empty_input_raises_error():
@@ -225,7 +352,8 @@ def test_graph_contains_parallel_base_info_and_diff_nodes():
     assert "diff_pairs" in graph.nodes
     assert "process_all_pairs" in graph.nodes
     assert any(edge.source == "validate_input" and edge.target == "identify_base_info" for edge in graph.edges)
-    assert any(edge.source == "validate_input" and edge.target == "diff_pairs" for edge in graph.edges)
+    assert any(edge.source == "validate_input" and edge.target == "split_and_index_contract" for edge in graph.edges)
+    assert any(edge.source == "split_and_index_contract" and edge.target == "diff_pairs" for edge in graph.edges)
     assert any(edge.source == "identify_base_info" and edge.target == "process_all_pairs" for edge in graph.edges)
     assert any(edge.source == "diff_pairs" and edge.target == "process_all_pairs" for edge in graph.edges)
 
@@ -356,6 +484,37 @@ def test_minimax_model_config_uses_openai_compatible_endpoint(monkeypatch):
     assert config["api_key"] == "test-minimax-key"
     assert config["model"] == "MiniMax-M2.7"
     assert config["base_url"] == "https://api.minimax.io/v1"
+
+
+def test_minimax_generation_skips_structured_output(monkeypatch):
+    import app.chains.reverse_rule_graph as graph
+    from app.services.diff_service import diff_contract_pair
+
+    monkeypatch.setenv("LLM_PROVIDER", "minimax")
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-minimax-key")
+    pair = ContractPair(
+        pair_id="pair-minimax-fast-path",
+        before_text="甲方应在验收后90日内付款。",
+        after_text="甲方应在验收后30日内付款。",
+        contract_type="服务合同",
+        review_role="乙方",
+    )
+    diff_result = diff_contract_pair(pair)
+
+    def fail_structured(*args, **kwargs):
+        raise AssertionError("MiniMax should skip structured output")
+
+    def text_result(current_pair, current_diff_result, retrieved_cases, base_info=None, context_packs=None):
+        diff = current_diff_result.changed_clauses[0]
+        return [_candidate_rule_for_diff(current_pair, diff)]
+
+    monkeypatch.setattr(graph, "_try_generate_with_structured_llm", fail_structured)
+    monkeypatch.setattr(graph, "_try_generate_rules_with_text_llm", text_result)
+
+    rules = graph.generate_rules_for_pair(pair, diff_result, [], None)
+
+    assert len(rules) == 1
+    assert rules[0].traces[0].source_diff_id == diff_result.changed_clauses[0].diff_id
 
 
 def test_loads_minimax_config_from_dotenv(monkeypatch):

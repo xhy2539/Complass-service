@@ -73,6 +73,7 @@ class RetrievedCase(BaseModel):
 
 class RuleExtractionTrace(BaseModel):
     pair_id: str
+    source_diff_id: str | None = None
     evidence_before: str
     evidence_after: str
     diff_summary: str

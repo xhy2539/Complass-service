@@ -9,6 +9,10 @@ RULE_GENERATION_PROMPT = """
 候选规则必须基于 diff_result 中 is_substantive=true 的修改点；retrieved_cases 是参考证据，不是生成前提。
 contract_base_info 仅作为合同类型、审核视角、合同主题、甲乙方身份的上下文参考；不得脱离 diff 重新审核合同。
 不得编造法律法规依据，不得脱离 diff 重新审核合同。
+每条 traces 必须输出 source_diff_id，且 source_diff_id 必须来自 diff_result.changed_clauses[*].diff_id。
+traces.evidence_before 必须逐字引用对应 source_diff_id 的 diff.before 或 context_json 片段原文。
+traces.evidence_after 必须逐字引用对应 source_diff_id 的 diff.after 或 context_json 片段原文。
+不得改写、概括、拼接或编造 traces.evidence_before / traces.evidence_after；diff_summary 可以概括，但不能替代证据。
 有高相似 retrieved_cases 时，可吸收案例中的风险名、检查点、触发条件和建议模板，并给出较高 confidence。
 弱匹配或无 retrieved_cases 时，仍可基于实质修改点生成低置信候选规则，confidence 必须低于 0.6，并在 traces.user_intent 说明“无高匹配知识库案例，仅基于修改行为反推候选审核规则，需人工确认后入库”。
 review_perspective 只能输出“甲方”“乙方”“通用”。

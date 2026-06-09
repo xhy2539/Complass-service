@@ -39,12 +39,19 @@
 
 1. `validate_input`：校验并补齐 `pair_id`
 2. `identify_base_info`：识别合同类型、审核角色、合同主题、甲乙方身份
-3. `diff_pairs`：识别差异条款、变更类型、是否实质性修改
-4. `process_all_pairs`：按差异构造检索 query，检索知识库案例，生成候选规则
-5. `merge_rules`：按 `review_module + risk_name + trigger_condition` 合并重复规则，并合并 `traces`
-6. `return_result`：返回候选规则结果
+3. `split_and_index_contract`：切分 before/after 合同片段，并建立上下文索引
+4. `diff_pairs`：基于上下文索引识别差异条款、变更类型、是否实质性修改
+5. `process_all_pairs`：按实质 diff 拆分为独立生成任务，构造检索 query，检索知识库案例，生成候选规则
+6. `merge_rules`：按 `review_module + risk_name + trigger_condition` 合并重复规则，并合并 `traces`
+7. `return_result`：返回候选规则结果
 
-说明：`identify_base_info` 和 `diff_pairs` 是并行节点；接口最终不返回中间结果。
+说明：
+
+- `identify_base_info` 和 `split_and_index_contract -> diff_pairs` 是并行分支；接口最终不返回中间结果。
+- `process_all_pairs` 内部按 `is_substantive=true` 的 diff 做有限并发，默认 `REVERSE_RULE_AGENT_CONCURRENCY=3`。
+- 每个 diff 使用单独的 `DiffResult` 进入规则生成，避免多 diff 共享一个过大的 LLM prompt。
+- 同一合同组内复用 `ContractContextIndex` 和 `ContextPack`，并对传给模型的 `context_json` 做瘦身。
+- 单个 diff 生成失败时记录日志并跳过，不阻塞同一合同组内其他 diff。
 
 ## 响应体
 
@@ -64,6 +71,7 @@
       "traces": [
         {
           "pair_id": "pair-1",
+          "source_diff_id": "pair-1-diff-1",
           "evidence_before": "甲方应在验收后90日内向乙方支付服务费。",
           "evidence_after": "甲方应在验收并收到合法有效发票后30日内向乙方支付服务费。",
           "diff_summary": "付款条款发生实质性修改：由“...”调整为“...”。",
@@ -100,6 +108,7 @@
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `pair_id` | string | 来源合同组 ID |
+| `source_diff_id` | string | 来源 diff ID；必须来自对应 `DiffResult.changed_clauses[*].diff_id` |
 | `evidence_before` | string | 修改前证据文本 |
 | `evidence_after` | string | 修改后证据文本 |
 | `diff_summary` | string | 差异摘要 |
