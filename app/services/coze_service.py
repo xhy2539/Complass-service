@@ -203,7 +203,10 @@ def normalize_review_workflow_result(result: dict[str, Any]) -> dict[str, Any]:
 
         logger.info(f"[Coze] 处理风险点 item: {json.dumps(item, ensure_ascii=False)}")
         action_type = item.get("action_type", "manual")
-        if action_type not in ("replace", "insert", "append", "manual"):
+        # append 定位困难，统一降级为人工确认
+        if action_type == "append":
+            action_type = "manual"
+        if action_type not in ("replace", "insert", "manual"):
             action_type = "manual"
 
         risk_points.append(
