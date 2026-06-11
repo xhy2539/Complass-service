@@ -144,17 +144,13 @@ class DocumentExporter:
                     ]
                     if all(len(r) == len(headers) for r in rows):
                         parsed_tables.append((headers, rows))
-                # 去重前面 tab 分隔行
+                # 回删所有连续 tab 分隔行（与表格内容重复）
                 while result and result[-1].strip() == "":
                     result.pop()
-                if result and "\t" in result[-1]:
-                    prev_lines = result[-1].strip().split("\n")
-                    if all(
-                        "\t" in ln and len(ln.split("\t")) == 2
-                        for ln in prev_lines
-                        if ln.strip()
-                    ):
-                        result.pop()
+                while result and "\t" in result[-1]:
+                    popped = result.pop().strip()
+                    if not popped:
+                        break
                 i = j
                 continue
             result.append(lines[i])
