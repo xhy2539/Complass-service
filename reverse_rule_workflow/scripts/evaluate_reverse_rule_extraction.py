@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import get_args
 from typing import Any, Iterable
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -24,7 +23,6 @@ from app.services.diff_service import detect_candidate_diffs
 from app.services.diff_service import split_and_index_contract
 from app.services.reverse_rule_tools import build_context_pack
 from app.services.reverse_rule_tools import validate_evidence
-
 
 DEFAULT_FIXTURE_PATH = PROJECT_ROOT / "tests" / "fixtures" / "reverse_rule_samples.json"
 BACKEND_FIELDS = {

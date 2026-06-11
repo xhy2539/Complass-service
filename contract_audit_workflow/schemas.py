@@ -6,7 +6,6 @@ import json
 import re
 from typing import Any
 
-
 REVIEW_ITEM_KEYS = ("risk", "key", "tip", "content", "advice", "replace_text")
 FINAL_ITEM_KEYS = (
     "rule_code",

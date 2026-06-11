@@ -45,7 +45,11 @@ class DocumentExporter:
         style.font.name = "Times New Roman"
         style.font.size = Pt(12)
 
-        parts = DocumentExporter._split_preserving_tables(text) if "【表格】" in text else text.split("\n")
+        parts = (
+            DocumentExporter._split_preserving_tables(text)
+            if "【表格】" in text
+            else text.split("\n")
+        )
         for part in parts:
             part = part.strip()
             if not part:
@@ -102,7 +106,7 @@ class DocumentExporter:
         idx = text.find(TABLE_MARKER)
         if idx < 0:
             return None
-        after = text[idx + len(TABLE_MARKER):].strip()
+        after = text[idx + len(TABLE_MARKER) :].strip()
         lines = [ln.strip() for ln in after.split("\n") if ln.strip()]
         if len(lines) < 2:
             return None
@@ -126,21 +130,14 @@ class DocumentExporter:
                 continue
             # 如果当前块包含【表格】但表格不完整（没有足够行），尝试合并后续块
             if "【表格】" in part:
-                # 计算表格应有的总行数（首行表头 + 数据行），以 | 分隔的行才计入
-                idx = part.find("【表格】")
-                after_marker = part[idx + 4:].strip()
-                table_lines = [l for l in after_marker.split("\n") if l.strip() and "|" in l]
-                # 当前块的表格行数
-                current_table_rows = len(table_lines)
-                # 检查是否需要合并后续块
+                # 检查是否需要合并后续纯表格数据行（被 \n\n 拆开的表格）
                 while i + 1 < len(raw_parts):
                     next_part = raw_parts[i + 1].strip()
                     if not next_part:
                         i += 1
                         continue
-                    # 如果下一块全部由 | 组成（纯表格数据行），合并
-                    next_lines = [l for l in next_part.split("\n") if l.strip()]
-                    if next_lines and all("|" in l for l in next_lines):
+                    next_lines = [ln for ln in next_part.split("\n") if ln.strip()]
+                    if next_lines and all("|" in ln for ln in next_lines):
                         part = part + "\n" + raw_parts[i + 1]
                         i += 1
                     else:

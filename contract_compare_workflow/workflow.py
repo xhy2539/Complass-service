@@ -7,14 +7,11 @@ import json
 import re
 from typing import Any
 
-from .llm_client import LLMClientError, chat_completion
-from .prompts import (
-    build_analyze_diff_risks_prompt,
-    build_classify_contract_type_prompt,
-    build_identify_differences_prompt,
-)
+from .llm_client import chat_completion
+from .prompts import build_analyze_diff_risks_prompt
+from .prompts import build_classify_contract_type_prompt
+from .prompts import build_identify_differences_prompt
 from .rules_client import fetch_audit_rules
-
 
 CONTRACT_TYPES = {"采购合同", "服务合同", "合作协议", "其他"}
 CHANGE_TYPES = {"added", "deleted", "modified", "moved"}

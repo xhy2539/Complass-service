@@ -1,6 +1,6 @@
 import json
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from app.chains.reverse_rule_graph import run_reverse_rule_extraction
 from app.kb import retriever
@@ -9,7 +9,6 @@ from app.models.reverse_rule import CandidateRuleForDB
 from app.services.diff_service import diff_contract_pair
 from app.services.query_builder import build_retrieval_queries
 from app.services.rule_code import to_rule_record
-
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "reverse_rule_samples.json"
 BACKEND_FIELDS = {

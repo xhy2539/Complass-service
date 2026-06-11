@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from collections import Counter, defaultdict
+from collections import Counter
+from collections import defaultdict
 from typing import Any
-
 
 TOP_LEVEL_FIELDS = ("success", "enhanced", "total_risks", "message")
 ENHANCED_FIELDS = (

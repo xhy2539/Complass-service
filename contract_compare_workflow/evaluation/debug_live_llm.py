@@ -16,8 +16,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from contract_compare_workflow.llm_client import LLMConfig, _extract_chat_content, load_project_env
-
+from contract_compare_workflow.llm_client import LLMConfig
+from contract_compare_workflow.llm_client import _extract_chat_content
+from contract_compare_workflow.llm_client import load_project_env
 
 HELLO_PROMPT = '只返回严格 JSON，不要 Markdown，不要解释：{"ok": true, "message": "hello"}'
 BASE_URLS = [

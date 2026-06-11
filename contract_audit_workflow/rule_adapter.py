@@ -8,7 +8,6 @@ from typing import Any
 
 from .schemas import parse_json_like
 
-
 RULE_BUCKET_KEYS = (
     "finance_rules",
     "legal_rules",

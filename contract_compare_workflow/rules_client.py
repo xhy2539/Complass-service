@@ -8,7 +8,6 @@ import httpx
 
 from .llm_client import get_config_value
 
-
 DEFAULT_AUDIT_RULES_API_URL = "http://82.156.132.43:8080/api/audit-rules"
 
 

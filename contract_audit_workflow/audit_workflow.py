@@ -3,41 +3,35 @@
 from __future__ import annotations
 
 import asyncio
-from contextvars import ContextVar
 import logging
 import re
 import time
+from contextvars import ContextVar
 from typing import Any
 
-from .audit_prompts import (
-    build_finance_review_prompt,
-    build_legal_review_prompt,
-    build_performance_review_prompt,
-)
+from .audit_prompts import build_finance_review_prompt
+from .audit_prompts import build_legal_review_prompt
+from .audit_prompts import build_performance_review_prompt
 from .contract_type_classifier import classify_contract_type
-from .llm_client import NODE_REQUEST_WINDOW_SECONDS, get_llm_client
-from .rule_adapter import (
-    adapt_rules,
-    flatten_rules,
-    split_common_specific_rules,
-)
+from .llm_client import NODE_REQUEST_WINDOW_SECONDS
+from .llm_client import get_llm_client
+from .rule_adapter import adapt_rules
+from .rule_adapter import flatten_rules
+from .rule_adapter import split_common_specific_rules
 from .rules_client import fetch_audit_rules
-from .schemas import (
-    LLMOutputError,
-    LLMRequestError,
-    count_final_items,
-    count_intermediate_items,
-    empty_final_result,
-    empty_review_result,
-    ensure_str,
-    normalize_final_risk,
-    normalize_intermediate_risk,
-    normalize_review_result,
-    parse_json_like,
-    preview_text,
-    strip_markdown_code_fence,
-)
-
+from .schemas import LLMOutputError
+from .schemas import LLMRequestError
+from .schemas import count_final_items
+from .schemas import count_intermediate_items
+from .schemas import empty_final_result
+from .schemas import empty_review_result
+from .schemas import ensure_str
+from .schemas import normalize_final_risk
+from .schemas import normalize_intermediate_risk
+from .schemas import normalize_review_result
+from .schemas import parse_json_like
+from .schemas import preview_text
+from .schemas import strip_markdown_code_fence
 
 logger = logging.getLogger(__name__)
 REVIEW_JSON_ONLY_WINDOW_SECONDS = NODE_REQUEST_WINDOW_SECONDS

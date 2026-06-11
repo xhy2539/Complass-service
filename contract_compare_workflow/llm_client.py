@@ -10,7 +10,6 @@ from typing import Any
 
 import httpx
 
-
 DEFAULT_MINIMAX_BASE_URL = "https://api.minimaxi.com/v1"
 DEFAULT_LLM_PROVIDER = "minimax"
 

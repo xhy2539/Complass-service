@@ -3,13 +3,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.kb.loader import load_reverse_rule_cases
-from app.kb.retriever import DEFAULT_PERSIST_DIR, build_reverse_rule_kb
+from app.kb.retriever import DEFAULT_PERSIST_DIR
+from app.kb.retriever import build_reverse_rule_kb
 
 
 def main() -> None:

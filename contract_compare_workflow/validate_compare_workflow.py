@@ -15,7 +15,6 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from contract_compare_workflow import workflow
 
-
 TOP_LEVEL_FIELDS = {"success", "enhanced", "total_risks", "message"}
 ENHANCED_FIELDS = {
     "category",

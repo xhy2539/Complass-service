@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import statistics
 import re
+import statistics
 from typing import Any
-
 
 RISK_LABEL_MAP = {
     "pass": "通过",

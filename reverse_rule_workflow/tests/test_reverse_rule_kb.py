@@ -1,9 +1,8 @@
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-
 
 REQUIRED_REVIEW_MODULES = {
     "付款条款",
@@ -73,7 +72,8 @@ def test_loads_at_least_20_cases_and_covers_required_modules():
 
 
 def test_document_contains_required_content_and_metadata():
-    from app.kb.loader import case_to_document, load_reverse_rule_cases
+    from app.kb.loader import case_to_document
+    from app.kb.loader import load_reverse_rule_cases
 
     case = load_reverse_rule_cases()[0]
     document = case_to_document(case)
@@ -119,8 +119,8 @@ def test_build_index_creates_persisted_kb():
 
 
 def test_retrieves_payment_case_for_payment_query(monkeypatch):
-    from app.kb.loader import load_reverse_rule_cases
     from app.kb import retriever
+    from app.kb.loader import load_reverse_rule_cases
 
     persist_dir = _test_storage_dir("test_reverse_rule_kb_payment")
     retriever.build_reverse_rule_kb(load_reverse_rule_cases(), persist_dir)
@@ -139,8 +139,8 @@ def test_retrieves_payment_case_for_payment_query(monkeypatch):
 
 
 def test_retrieves_data_security_case_for_personal_info_query(monkeypatch):
-    from app.kb.loader import load_reverse_rule_cases
     from app.kb import retriever
+    from app.kb.loader import load_reverse_rule_cases
 
     persist_dir = _test_storage_dir("test_reverse_rule_kb_data")
     retriever.build_reverse_rule_kb(load_reverse_rule_cases(), persist_dir)
@@ -156,8 +156,8 @@ def test_retrieves_data_security_case_for_personal_info_query(monkeypatch):
 
 
 def test_retrieves_ip_case_for_ownership_query(monkeypatch):
-    from app.kb.loader import load_reverse_rule_cases
     from app.kb import retriever
+    from app.kb.loader import load_reverse_rule_cases
 
     persist_dir = _test_storage_dir("test_reverse_rule_kb_ip")
     retriever.build_reverse_rule_kb(load_reverse_rule_cases(), persist_dir)
@@ -173,8 +173,8 @@ def test_retrieves_ip_case_for_ownership_query(monkeypatch):
 
 
 def test_filters_by_review_module_contract_type_and_review_role(monkeypatch):
-    from app.kb.loader import load_reverse_rule_cases
     from app.kb import retriever
+    from app.kb.loader import load_reverse_rule_cases
 
     persist_dir = _test_storage_dir("test_reverse_rule_kb_filters")
     retriever.build_reverse_rule_kb(load_reverse_rule_cases(), persist_dir)
@@ -193,8 +193,8 @@ def test_filters_by_review_module_contract_type_and_review_role(monkeypatch):
     assert all("服务合同" in result["contract_type"] for result in results)
     assert all("被审计方" in result["review_role"] for result in results)
 def test_generic_review_role_does_not_block_jurisdiction_case(monkeypatch):
-    from app.kb.loader import load_reverse_rule_cases
     from app.kb import retriever
+    from app.kb.loader import load_reverse_rule_cases
 
     persist_dir = _test_storage_dir("test_reverse_rule_kb_generic_role")
     retriever.build_reverse_rule_kb(load_reverse_rule_cases(), persist_dir)
@@ -213,8 +213,8 @@ def test_generic_review_role_does_not_block_jurisdiction_case(monkeypatch):
 
 
 def test_granular_review_role_matches_normalized_perspective(monkeypatch):
-    from app.kb.loader import load_reverse_rule_cases
     from app.kb import retriever
+    from app.kb.loader import load_reverse_rule_cases
 
     persist_dir = _test_storage_dir("test_reverse_rule_kb_normalized_role")
     retriever.build_reverse_rule_kb(load_reverse_rule_cases(), persist_dir)

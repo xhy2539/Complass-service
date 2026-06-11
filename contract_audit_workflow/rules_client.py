@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-from http.client import RemoteDisconnected
 import logging
 import time
-from urllib import error, parse, request
+from http.client import RemoteDisconnected
+from urllib import error
+from urllib import parse
+from urllib import request
 
 from .config import get_settings
-from .schemas import LLMOutputError, RulesFetchError, parse_json_like, preview_text
-
+from .schemas import LLMOutputError
+from .schemas import RulesFetchError
+from .schemas import parse_json_like
+from .schemas import preview_text
 
 logger = logging.getLogger(__name__)
 

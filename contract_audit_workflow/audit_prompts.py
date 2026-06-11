@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 
-
 CONTRACT_TYPE_CLASSIFIER_PROMPT = """你是一个合同类型识别助手。
 
 你的任务是根据输入的合同文本，判断该合同最接近哪一种合同类型。

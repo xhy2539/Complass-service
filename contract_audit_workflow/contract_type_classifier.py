@@ -7,7 +7,6 @@ import re
 from .audit_prompts import CONTRACT_TYPE_CLASSIFIER_PROMPT
 from .llm_client import get_llm_client
 
-
 SUPPORTED_CONTRACT_TYPES = ("采购合同", "服务合同", "合作协议", "其他")
 
 

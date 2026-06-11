@@ -17,14 +17,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from contract_compare_workflow import workflow
 from contract_compare_workflow.evaluation.instrumentation import run_compare_with_trace
-from contract_compare_workflow.evaluation.scoring import (
-    aggregate_results,
-    build_stub_enhanced,
-    evaluate_case,
-    load_gold_cases,
-    print_console_summary,
-)
-
+from contract_compare_workflow.evaluation.scoring import aggregate_results
+from contract_compare_workflow.evaluation.scoring import build_stub_enhanced
+from contract_compare_workflow.evaluation.scoring import evaluate_case
+from contract_compare_workflow.evaluation.scoring import load_gold_cases
+from contract_compare_workflow.evaluation.scoring import print_console_summary
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 GOLD_CASES_PATH = Path(__file__).resolve().parent / "gold_cases.json"

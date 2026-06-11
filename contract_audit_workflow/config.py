@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import lru_cache
-import os
 from pathlib import Path
-
 
 DEFAULT_AUDIT_RULES_API_URL = "http://82.156.132.43:8080/api/audit-rules"
 DEFAULT_AUDIT_RULES_TIMEOUT_SECONDS = 600

@@ -1,6 +1,9 @@
 """Workflow evaluation test script."""
-import json, time, urllib.parse, sys
+import sys
+import time
+import urllib.parse
 from pathlib import Path
+
 import httpx
 
 BASE = "http://82.156.132.43:8080"
@@ -95,16 +98,16 @@ def upload_and_wait(endpoint, file_map: dict, extra_fields: dict = None, label: 
                     r2 = client.get(f"{BASE}{endpoint}/{tid}/risks", headers={"Authorization": f"Bearer {TOKEN}"})
                     print(f"  DONE: {r2.json().get('total', '?')} risks found")
                 except Exception:
-                    print(f"  DONE")
+                    print("  DONE")
             elif label == "reverse-rule":
                 try:
                     r2 = client.get(f"{BASE}{endpoint}/{tid}/candidates", headers={"Authorization": f"Bearer {TOKEN}"})
                     cc = len(r2.json().get("candidates", []))
                     print(f"  DONE: {cc} candidates extracted")
                 except Exception:
-                    print(f"  DONE")
+                    print("  DONE")
             else:
-                print(f"  DONE")
+                print("  DONE")
             break
         elif s == "failed":
             print(f"  FAILED: {info.get('error_message', '')[:120]}")

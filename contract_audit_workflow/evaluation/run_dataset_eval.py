@@ -5,39 +5,36 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from contract_audit_workflow import audit_contract
 import contract_audit_workflow.audit_workflow as workflow
-from contract_audit_workflow.rule_adapter import adapt_rules
-from contract_audit_workflow.evaluation.metrics import (
-    action_type_accuracy,
-    advice_alignment_rate,
-    content_quote_accuracy,
-    contract_type_accuracy,
-    count_alignment_rate,
-    false_negative_rate,
-    false_positive_rate,
-    key_hit_rate,
-    latency_summary,
-    missing_clause_detection_accuracy,
-    output_retention_rate,
-    replace_text_non_fabrication_rate,
-    risk_accuracy,
-    risk_label_consistency_rate,
-    rule_code_fill_rate,
-    schema_pass_rate,
-    stability_summary,
-)
+from contract_audit_workflow import audit_contract
+from contract_audit_workflow.evaluation.metrics import action_type_accuracy
+from contract_audit_workflow.evaluation.metrics import advice_alignment_rate
+from contract_audit_workflow.evaluation.metrics import content_quote_accuracy
+from contract_audit_workflow.evaluation.metrics import contract_type_accuracy
+from contract_audit_workflow.evaluation.metrics import count_alignment_rate
+from contract_audit_workflow.evaluation.metrics import false_negative_rate
+from contract_audit_workflow.evaluation.metrics import false_positive_rate
+from contract_audit_workflow.evaluation.metrics import key_hit_rate
+from contract_audit_workflow.evaluation.metrics import latency_summary
+from contract_audit_workflow.evaluation.metrics import missing_clause_detection_accuracy
+from contract_audit_workflow.evaluation.metrics import output_retention_rate
+from contract_audit_workflow.evaluation.metrics import replace_text_non_fabrication_rate
+from contract_audit_workflow.evaluation.metrics import risk_accuracy
+from contract_audit_workflow.evaluation.metrics import risk_label_consistency_rate
+from contract_audit_workflow.evaluation.metrics import rule_code_fill_rate
+from contract_audit_workflow.evaluation.metrics import schema_pass_rate
+from contract_audit_workflow.evaluation.metrics import stability_summary
 from contract_audit_workflow.evaluation.schema_checks import validate_audit_result
-
+from contract_audit_workflow.rule_adapter import adapt_rules
 
 EVAL_ROOT = Path(__file__).resolve().parent
 CASES_ROOT = EVAL_ROOT / "cases"
