@@ -92,13 +92,15 @@ class DocumentExporter:
         new_paragraphs = [p for p in new_text.split(sep)]
         # 只取正文段落，排除表格单元格内的段落
         from docx.oxml.ns import qn
+
         def _is_body_para(p):
             parent = p._element.getparent()
             while parent is not None:
-                if parent.tag == qn('w:tc'):
+                if parent.tag == qn("w:tc"):
                     return False
                 parent = parent.getparent()
             return True
+
         original_paras = [p for p in doc.paragraphs if _is_body_para(p)]
         # 如果过滤后为空，回退到全部段落
         if not original_paras:
