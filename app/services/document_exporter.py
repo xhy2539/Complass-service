@@ -188,6 +188,12 @@ class DocumentExporter:
         extra: list[str] = []  # 无法定位的插入段落，追加到末尾
 
         while oi < len(original_paras) and ni < len(new_paragraphs):
+            # 表格块不参与文本匹配，直接追加到末尾（渲染为真正表格）
+            if DocumentExporter._parse_table_block(new_paragraphs[ni]):
+                extra.append(new_paragraphs[ni])
+                ni += 1
+                continue
+
             sim = _text_similarity(original_paras[oi].text, new_paragraphs[ni])
 
             if sim >= MATCH_THRESHOLD:
