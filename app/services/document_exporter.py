@@ -45,47 +45,22 @@ class DocumentExporter:
         style.font.name = "Times New Roman"
         style.font.size = Pt(12)
 
-        parts = (
-            DocumentExporter._split_preserving_tables(text)
-            if "【表格】" in text
-            else text.split("\n")
-        )
-        for part in parts:
-            part = part.strip()
-            if not part:
+        lines = text.split("\n")
+        for line in lines:
+            line = line.strip()
+            if not line:
                 doc.add_paragraph()
                 continue
-            table = DocumentExporter._parse_table_block(part)
-            if table:
-                headers, rows = table
-                tbl = doc.add_table(rows=1 + len(rows), cols=len(headers))
-                tbl.style = "Table Grid"
-                for ci, header in enumerate(headers):
-                    cell = tbl.rows[0].cells[ci]
-                    cell.text = header
-                    for p in cell.paragraphs:
-                        for run in p.runs:
-                            run.bold = True
-                for ri, row in enumerate(rows):
-                    for ci, cell_text in enumerate(row):
-                        tbl.rows[ri + 1].cells[ci].text = cell_text
-                doc.add_paragraph()
-                continue
-            for line in part.split("\n"):
-                line = line.strip()
-                if not line:
-                    doc.add_paragraph()
-                    continue
-                heading_level = DocumentExporter._detect_heading(line)
-                if heading_level > 0:
-                    heading = doc.add_heading(level=heading_level)
-                    heading_run = heading.add_run(line)
-                    heading_run.font.size = DocumentExporter._get_heading_size(
-                        heading_level
-                    )
-                else:
-                    p = doc.add_paragraph(line)
-                    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            heading_level = DocumentExporter._detect_heading(line)
+            if heading_level > 0:
+                heading = doc.add_heading(level=heading_level)
+                heading_run = heading.add_run(line)
+                heading_run.font.size = DocumentExporter._get_heading_size(
+                    heading_level
+                )
+            else:
+                p = doc.add_paragraph(line)
+                p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
         if title:
             for section in doc.sections:
@@ -100,73 +75,39 @@ class DocumentExporter:
         return buffer
 
     @staticmethod
-    def _parse_table_block(text: str):
-        """解析【表格】标记的文本块，返回 (headers, rows) 或 None。"""
-        TABLE_MARKER = "【表格】"
-        idx = text.find(TABLE_MARKER)
-        if idx < 0:
-            return None
-        after = text[idx + len(TABLE_MARKER) :].strip()
-        lines = [ln.strip() for ln in after.split("\n") if ln.strip()]
-        if len(lines) < 2:
-            return None
-        headers = [c.strip() for c in lines[0].split("|")]
-        rows = [[c.strip() for c in ln.split("|")] for ln in lines[1:]]
-        if not headers or any(len(r) != len(headers) for r in rows):
-            return None
-        return (headers, rows)
+    def _strip_table_blocks(text: str) -> str:
+        """移除文本中的【表格】标记块（原模板已有表格，无需重复渲染）。
 
-    @staticmethod
-    def _split_preserving_tables(text: str):
-        """将文本按段落分隔拆分，但保持【表格】块完整不拆开。
-
-        同时去掉紧邻【表格】标记前的 tab 分隔重复内容（后端解析时产生的冗余）。"""
-        sep = "\n\n"
-        raw_parts = text.split(sep)
-        merged = []
-        i = 0
-        while i < len(raw_parts):
-            part = raw_parts[i].strip()
-            if not part:
-                i += 1
-                continue
-            if "【表格】" in part:
-                # 合并后续被 \n\n 拆散的表格数据行
-                while i + 1 < len(raw_parts):
-                    next_part = raw_parts[i + 1].strip()
-                    if not next_part:
-                        i += 1
-                        continue
-                    next_lines = [ln for ln in next_part.split("\n") if ln.strip()]
-                    if next_lines and all("|" in ln for ln in next_lines):
-                        part = part + "\n" + raw_parts[i + 1]
-                        i += 1
-                    else:
-                        break
-                # 前一个块如果是纯 tab 分隔键值对，与表格内容重复，删掉
-                table_cells = {
-                    cell.strip()
-                    for ln in part.split("\n")
-                    if "|" in ln
-                    for cell in ln.split("|")
-                    if cell.strip()
-                }
-                if merged and table_cells:
-                    prev = merged[-1].strip()
-                    prev_lines = prev.split("\n")
+        同时去掉紧邻【表格】前的 tab 分隔键值对（后端解析产生的冗余）。"""
+        # 移除 【表格】 开头的行及其后续管道分隔行
+        lines = text.split("\n")
+        result: list[str] = []
+        skip = False
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("【表格】"):
+                # 回删前一个块中的纯 tab 键值对（与表格重复）
+                while result and result[-1].strip() == "":
+                    result.pop()
+                if result and "\t" in result[-1]:
+                    prev_lines = result[-1].strip().split("\n")
                     if all(
-                        "\t" in ln and len(ln.split("\t")) == 2 for ln in prev_lines
+                        "\t" in ln and len(ln.split("\t")) == 2
+                        for ln in prev_lines
+                        if ln.strip()
                     ):
-                        prev_values = {
-                            v.strip() for ln in prev_lines for v in ln.split("\t")
-                        }
-                        if len(table_cells & prev_values) >= len(prev_values) * 0.6:
-                            merged.pop()
-                merged.append(part.strip())
-            else:
-                merged.append(part)
-            i += 1
-        return merged
+                        result.pop()
+                skip = True
+                continue
+            if skip:
+                if stripped and "|" in stripped:
+                    continue  # 管道分隔行是表格数据
+                # 遇空行或非管道行结束跳过
+                if not stripped:
+                    continue
+                skip = False
+            result.append(line)
+        return "\n".join(result)
 
     @staticmethod
     def export_text_to_docx_preserve_format(
@@ -180,27 +121,13 @@ class DocumentExporter:
         - 相似度达阈值的段落 → 替换文本，保留格式
         - 在原文档中找不到匹配的新段落 → 追加到文档末尾
         - 在新文本中找不到匹配的旧段落 → 清空文本
-        - 【表格】块 → 渲染为真正的 Word 表格
         """
+        # 去掉【表格】块，原模板已有表格
+        clean_text = DocumentExporter._strip_table_blocks(new_text)
+
         doc = Document(original_file_path)
-        new_paragraphs = DocumentExporter._split_preserving_tables(new_text)
-        # 清掉原模板中与新文本重复的表格内容，避免签署块等重复
-        new_text_flat = set(new_text.split())
-        for tbl in doc.tables:
-            cell_texts = []
-            for row in tbl.rows:
-                for cell in row.cells:
-                    cell_texts.append(cell.text.strip())
-            tbl_text = " ".join(cell_texts)
-            tbl_words = set(tbl_text.split())
-            if tbl_words and new_text_flat:
-                overlap = len(tbl_words & new_text_flat) / max(len(tbl_words), 1)
-                if overlap > 0.5:
-                    for row in tbl.rows:
-                        for cell in row.cells:
-                            for p in cell.paragraphs:
-                                for run in p.runs:
-                                    run.text = ""
+        sep = "\n\n" if "\n\n" in clean_text else "\n"
+        new_paragraphs = [p for p in clean_text.split(sep)]
         # 只取正文段落，排除表格单元格内的段落
         from docx.oxml.ns import qn
 
@@ -225,12 +152,6 @@ class DocumentExporter:
         extra: list[str] = []  # 无法定位的插入段落，追加到末尾
 
         while oi < len(original_paras) and ni < len(new_paragraphs):
-            # 表格块不参与文本匹配，直接追加到末尾（渲染为真正表格）
-            if DocumentExporter._parse_table_block(new_paragraphs[ni]):
-                extra.append(new_paragraphs[ni])
-                ni += 1
-                continue
-
             sim = _text_similarity(original_paras[oi].text, new_paragraphs[ni])
 
             if sim >= MATCH_THRESHOLD:
@@ -292,25 +213,7 @@ class DocumentExporter:
             ni += 1
 
         for text in extra:
-            if not text.strip():
-                continue
-            table = DocumentExporter._parse_table_block(text)
-            if table:
-                headers, rows = table
-                tbl = doc.add_table(rows=1 + len(rows), cols=len(headers))
-                tbl.style = "Table Grid"
-                for ci, header in enumerate(headers):
-                    cell = tbl.rows[0].cells[ci]
-                    cell.text = header
-                    for p in cell.paragraphs:
-                        for run in p.runs:
-                            run.bold = True
-                for ri, row in enumerate(rows):
-                    for ci, cell_text in enumerate(row):
-                        tbl.rows[ri + 1].cells[ci].text = cell_text
-                # 表格后加空行隔开
-                doc.add_paragraph()
-            else:
+            if text.strip():
                 doc.add_paragraph(text)
 
         buffer = BytesIO()
