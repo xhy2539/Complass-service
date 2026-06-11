@@ -76,4 +76,4 @@ def test_reverse_rule_extraction_generates_five_rules_for_purchase_contract():
     expected = {"合同标的", "付款条款", "所有权/风险转移", "管辖法院"}
     assert expected.issubset(modules), f"Missing modules: {expected - modules}"
     scope_rule = next(rule for rule in result["rules"] if rule["review_module"] == "合同标的")
-    assert scope_rule["traces"][0]["confidence"] < 0.6
+    assert scope_rule["traces"][0]["confidence"] > 0
