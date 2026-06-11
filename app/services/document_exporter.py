@@ -184,6 +184,23 @@ class DocumentExporter:
         """
         doc = Document(original_file_path)
         new_paragraphs = DocumentExporter._split_preserving_tables(new_text)
+        # 清掉原模板中与新文本重复的表格内容，避免签署块等重复
+        new_text_flat = set(new_text.split())
+        for tbl in doc.tables:
+            cell_texts = []
+            for row in tbl.rows:
+                for cell in row.cells:
+                    cell_texts.append(cell.text.strip())
+            tbl_text = " ".join(cell_texts)
+            tbl_words = set(tbl_text.split())
+            if tbl_words and new_text_flat:
+                overlap = len(tbl_words & new_text_flat) / max(len(tbl_words), 1)
+                if overlap > 0.5:
+                    for row in tbl.rows:
+                        for cell in row.cells:
+                            for p in cell.paragraphs:
+                                for run in p.runs:
+                                    run.text = ""
         # 只取正文段落，排除表格单元格内的段落
         from docx.oxml.ns import qn
 
