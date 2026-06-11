@@ -75,18 +75,76 @@ class DocumentExporter:
         return buffer
 
     @staticmethod
-    def _strip_table_blocks(text: str) -> str:
-        """移除文本中的【表格】标记块（原模板已有表格，无需重复渲染）。
+    def _parse_table_block(text: str):
+        """解析【表格】标记块，返回 (headers, rows) 或 None。"""
+        idx = text.find("【表格】")
+        if idx < 0:
+            return None
+        after = text[idx + 4 :].strip()
+        lines = [ln.strip() for ln in after.split("\n") if ln.strip() and "|" in ln]
+        if len(lines) < 2:
+            return None
+        headers = [c.strip() for c in lines[0].split("|")]
+        rows = [[c.strip() for c in ln.split("|")] for ln in lines[1:]]
+        if not headers or any(len(r) != len(headers) for r in rows):
+            return None
+        return (headers, rows)
 
-        同时去掉紧邻【表格】前的 tab 分隔键值对（后端解析产生的冗余）。"""
-        # 移除 【表格】 开头的行及其后续管道分隔行
+    @staticmethod
+    def _update_template_table(tbl, headers, rows):
+        """用解析后的表头和数据行填充模板表格，自动补齐/清空行。"""
+        need = 1 + len(rows)
+        while len(tbl.rows) < need:
+            tbl.add_row()
+        for ri in range(len(tbl.rows)):
+            for c in tbl.rows[ri].cells:
+                for p in c.paragraphs:
+                    for run in p.runs:
+                        run.text = ""
+        col_count = min(len(headers), len(tbl.columns))
+        for ci in range(col_count):
+            tbl.rows[0].cells[ci].paragraphs[0].runs[0].text = (
+                headers[ci] if tbl.rows[0].cells[ci].paragraphs[0].runs else ""
+            )
+            if not tbl.rows[0].cells[ci].paragraphs[0].runs:
+                tbl.rows[0].cells[ci].text = headers[ci]
+        for ri, row_data in enumerate(rows):
+            for ci in range(min(len(row_data), col_count)):
+                cell = tbl.rows[ri + 1].cells[ci]
+                if cell.paragraphs[0].runs:
+                    cell.paragraphs[0].runs[0].text = row_data[ci]
+                else:
+                    cell.text = row_data[ci]
+
+    @classmethod
+    def _extract_and_strip_tables(cls, text: str, template_tables):
+        """提取【表格】块写回原模板表格，多余表格追加到extra_tables供调用方处理。"""
+        TABLE_MARKER = "【表格】"
         lines = text.split("\n")
         result: list[str] = []
-        skip = False
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith("【表格】"):
-                # 回删前一个块中的纯 tab 键值对（与表格重复）
+        parsed_tables: list[tuple[list[str], list[list[str]]]] = []
+
+        i = 0
+        while i < len(lines):
+            stripped = lines[i].strip()
+            if stripped.startswith(TABLE_MARKER):
+                table_lines = []
+                j = i + 1
+                while j < len(lines):
+                    ln = lines[j].strip()
+                    if ln and "|" in ln:
+                        table_lines.append(ln)
+                    elif ln:
+                        break
+                    j += 1
+                if len(table_lines) >= 2:
+                    headers = [c.strip() for c in table_lines[0].split("|")]
+                    rows = [
+                        [c.strip() for c in ln.split("|")] for ln in table_lines[1:]
+                    ]
+                    if all(len(r) == len(headers) for r in rows):
+                        parsed_tables.append((headers, rows))
+                # 去重前面 tab 分隔行
                 while result and result[-1].strip() == "":
                     result.pop()
                 if result and "\t" in result[-1]:
@@ -97,17 +155,17 @@ class DocumentExporter:
                         if ln.strip()
                     ):
                         result.pop()
-                skip = True
+                i = j
                 continue
-            if skip:
-                if stripped and "|" in stripped:
-                    continue  # 管道分隔行是表格数据
-                # 遇空行或非管道行结束跳过
-                if not stripped:
-                    continue
-                skip = False
-            result.append(line)
-        return "\n".join(result)
+            result.append(lines[i])
+            i += 1
+
+        # 写入模板表格（按序对应）
+        for k, (headers, rows) in enumerate(parsed_tables):
+            if k < len(template_tables):
+                cls._update_template_table(template_tables[k], headers, rows)
+        # 返回纯文本 + 额外表格数据
+        return "\n".join(result), parsed_tables[len(template_tables) :]
 
     @staticmethod
     def export_text_to_docx_preserve_format(
@@ -122,10 +180,11 @@ class DocumentExporter:
         - 在原文档中找不到匹配的新段落 → 追加到文档末尾
         - 在新文本中找不到匹配的旧段落 → 清空文本
         """
-        # 去掉【表格】块，原模板已有表格
-        clean_text = DocumentExporter._strip_table_blocks(new_text)
-
         doc = Document(original_file_path)
+        # 提取【表格】块写回原模板表格，返回去表纯文本和额外表格
+        clean_text, extra_tables = DocumentExporter._extract_and_strip_tables(
+            new_text, doc.tables
+        )
         sep = "\n\n" if "\n\n" in clean_text else "\n"
         new_paragraphs = [p for p in clean_text.split(sep)]
         # 只取正文段落，排除表格单元格内的段落
@@ -215,6 +274,20 @@ class DocumentExporter:
         for text in extra:
             if text.strip():
                 doc.add_paragraph(text)
+
+        # 新增的表格（无对应模板表格）渲染到末尾
+        for headers, rows in extra_tables:
+            tbl = doc.add_table(rows=1 + len(rows), cols=len(headers))
+            tbl.style = "Table Grid"
+            for ci, header in enumerate(headers):
+                tbl.rows[0].cells[ci].text = header
+                for p in tbl.rows[0].cells[ci].paragraphs:
+                    for run in p.runs:
+                        run.bold = True
+            for ri, row_data in enumerate(rows):
+                for ci, cell_text in enumerate(row_data):
+                    tbl.rows[ri + 1].cells[ci].text = cell_text
+            doc.add_paragraph()
 
         buffer = BytesIO()
         doc.save(buffer)
