@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -57,3 +57,26 @@ jobs:
         run: |
           . .venv/bin/activate
           python -c "from app.main import app; print(app.title)"
+
+  deploy:
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy
+        run: |
+          ssh -o StrictHostKeyChecking=no root@82.156.132.43 "
+            set -eux
+            cd /opt/complass-service
+            git checkout -- . 2>/dev/null || true
+            git pull origin dev
+            sed -i 's/^COZE_ACCESS_TOKEN=.*/COZE_ACCESS_TOKEN=${{ secrets.COZE_ACCESS_TOKEN }}/' .env
+            docker build -t complass-service:latest .
+            docker compose up -d complass-service
+            sleep 5
+            curl -f --max-time 10 --retry 3 --retry-delay 3 http://127.0.0.1:8080/health
+          "
