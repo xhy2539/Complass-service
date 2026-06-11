@@ -165,7 +165,7 @@ pipeline {
                             git pull --ff-only
                             sed -i \"s/^COZE_ACCESS_TOKEN=.*/COZE_ACCESS_TOKEN=${COZE_ACCESS_TOKEN}/\" .env
                             docker build -t complass-service:latest .
-                            docker compose up -d --build
+                            docker compose up -d complass-service
                             docker compose ps
                             sleep 5
                             curl -f --max-time 10 --retry 3 --retry-delay 3 http://127.0.0.1:8080/health
