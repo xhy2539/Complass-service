@@ -12,7 +12,7 @@ pipeline {
         DEPLOY_USER = 'root'
         DEPLOY_DIR = '/opt/complass-service'
         DEPLOY_SSH_CREDENTIALS_ID = 'jenkins'
-        COZE_TOKEN_CREDENTIAL_ID = 'coze-access-token'
+        COZE_ACCESS_TOKEN = 'pat_VdFetBV0FTJqlg0cPtFJJGX4rWDDmZIhhQ9RHD7z4Si1ThlTWOh9nctnJquyV2GR'
     }
 
     stages {
@@ -163,6 +163,7 @@ pipeline {
                             git checkout -- . 2>/dev/null || true
                             git stash clear 2>/dev/null || true
                             git pull --ff-only
+                            sed -i \"s/^COZE_ACCESS_TOKEN=.*/COZE_ACCESS_TOKEN=${COZE_ACCESS_TOKEN}/\" .env
                             docker build -t complass-service:latest .
                             docker compose up -d --build
                             docker compose ps
