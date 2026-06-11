@@ -199,6 +199,11 @@ class DocumentExporter:
         if not original_paras:
             original_paras = list(doc.paragraphs)
 
+        # 清掉原模板中的 tab 分隔键值对（表格内容，已在 _extract_and_strip_tables 中处理）
+        for p in original_paras:
+            if "\t" in p.text and len(p.text.split("\t")) == 2:
+                _set_para_text(p, "")
+
         MATCH_THRESHOLD = 0.35
         LOOKAHEAD = 3
 
