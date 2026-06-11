@@ -246,8 +246,12 @@ def find_best_paragraph_match(
     if not evidence or not paragraphs_info:
         return None, None
 
-    # 策略1：精确包含匹配
-    # 查找证据文本被哪个段落包含，或段落文本被证据包含
+    # 策略1：精确包含匹配（含空白规范化）
+    # Coze可能把原文\n换成空格，先规范化再比
+    def _norm_ws(s: str) -> str:
+        return re.sub(r"\s+", " ", s).strip()
+
+    evidence_norm = _norm_ws(evidence)
     best_match = None
     best_score = 0.0
     matched_idx = None
@@ -256,8 +260,9 @@ def find_best_paragraph_match(
         para_text = para_info["text"]
         if not para_text:
             continue
-
-        if evidence in para_text:
+        # 先精确匹配，再规范化匹配（处理Coze把\n换成空格的情况）
+        para_norm = _norm_ws(para_text)
+        if evidence in para_text or evidence_norm in para_norm:
             # 证据完全在段落中，按长度占比打分（越短的段落匹配越精确）
             score = len(evidence) / max(len(para_text), 1)
             if score > best_score:
