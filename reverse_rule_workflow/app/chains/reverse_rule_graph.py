@@ -17,6 +17,8 @@ from langgraph.graph import START
 from langgraph.graph import StateGraph
 
 from app.kb.fallback import fallback_reverse_rule_cases
+from app.kb.feedback import feedback_rules_to_kb
+from app.kb.feedback import filter_against_kb
 from app.models.reverse_rule import CandidateRuleBatch
 from app.models.reverse_rule import CandidateRuleForDB
 from app.models.reverse_rule import ContractBaseInfo
@@ -56,6 +58,9 @@ class ReverseRuleState(TypedDict, total=False):
     rules: list[CandidateRuleForDB]
     result: FinalRuleResult
     rule_generator: RuleGenerator | None
+    # 输出过滤 + 知识库回流
+    filtered_out: list[dict[str, Any]]
+    feedback_result: dict[str, Any]
 
 
 def validate_input(contract_pairs: list[dict[str, Any]]) -> list[ContractPair]:
@@ -75,7 +80,7 @@ def retrieve_cases_for_diff(
     diff_result: DiffResult,
     contract_type: str | None = None,
     review_role: str | None = None,
-    k: int = 3,
+    k: int = 5,
 ) -> list[RetrievedCase]:
     retrieved: list[RetrievedCase] = []
     substantive_clauses = [
@@ -537,7 +542,12 @@ def run_reverse_rule_extraction(
         "rule_generator": rule_generator,
     }
     final_state = graph.invoke(state)
-    return final_state["result"].model_dump()
+    result = final_state["result"].model_dump()
+    if "filtered_out" in final_state:
+        result["filtered_out"] = final_state["filtered_out"]
+    if "feedback_result" in final_state:
+        result["feedback_result"] = final_state["feedback_result"]
+    return result
 
 
 def build_reverse_rule_graph():
@@ -548,6 +558,8 @@ def build_reverse_rule_graph():
     graph.add_node("diff_pairs", _diff_pairs_node)
     graph.add_node("process_all_pairs", _process_all_pairs_node)
     graph.add_node("merge_rules", _merge_rules_node)
+    graph.add_node("filter_rules", _filter_rules_node)
+    graph.add_node("feedback_rules", _feedback_rules_node)
     graph.add_node("return_result", _return_result_node)
     graph.add_edge(START, "validate_input")
     graph.add_edge("validate_input", "identify_base_info")
@@ -555,7 +567,9 @@ def build_reverse_rule_graph():
     graph.add_edge("split_and_index_contract", "diff_pairs")
     graph.add_edge(["identify_base_info", "diff_pairs"], "process_all_pairs")
     graph.add_edge("process_all_pairs", "merge_rules")
-    graph.add_edge("merge_rules", "return_result")
+    graph.add_edge("merge_rules", "filter_rules")
+    graph.add_edge("filter_rules", "feedback_rules")
+    graph.add_edge("feedback_rules", "return_result")
     graph.add_edge("return_result", END)
     return graph.compile()
 
@@ -622,10 +636,56 @@ def _merge_rules_node(state: ReverseRuleState) -> ReverseRuleState:
     return {"rules": merge_rules(state.get("pair_rules", []))}
 
 
+def _filter_rules_node(state: ReverseRuleState) -> ReverseRuleState:
+    """输出过滤节点：去除 KB 已有规则 + 批内重复规则。
+
+    由 REVERSE_RULE_FILTER_ENABLED 环境变量控制（默认 "1"）。
+    """
+    enabled = os.getenv("REVERSE_RULE_FILTER_ENABLED", "1") == "1"
+    rules = state.get("rules", [])
+
+    if not enabled:
+        _logger = logging.getLogger(__name__)
+        _logger.info("[Filter] 节点已禁用 (REVERSE_RULE_FILTER_ENABLED!=1)，跳过过滤")
+        return {"filtered_out": []}
+
+    if not rules:
+        return {"filtered_out": []}
+
+    kept, filtered_out = filter_against_kb(rules)
+    return {"rules": kept, "filtered_out": filtered_out}
+
+
+def _feedback_rules_node(state: ReverseRuleState) -> ReverseRuleState:
+    """知识库回流节点：高置信度规则经 MiniMax 审核后入库。
+
+    由 REVERSE_RULE_FEEDBACK_ENABLED 环境变量控制（默认 "1"）。
+    """
+    enabled = os.getenv("REVERSE_RULE_FEEDBACK_ENABLED", "1") == "1"
+    rules = state.get("rules", [])
+
+    if not enabled:
+        _logger = logging.getLogger(__name__)
+        _logger.info(
+            "[Feedback] 节点已禁用 (REVERSE_RULE_FEEDBACK_ENABLED!=1)，跳过回流"
+        )
+        return {"feedback_result": {"added": 0, "reason": "disabled"}}
+
+    if not rules:
+        return {"feedback_result": {"added": 0, "reason": "no_rules"}}
+
+    result = feedback_rules_to_kb(rules)
+    return {"feedback_result": result}
+
+
 def _return_result_node(state: ReverseRuleState) -> ReverseRuleState:
     rules = state.get("rules", [])
+    filtered = state.get("filtered_out", [])
     if rules:
-        summary = f"共生成 {len(rules)} 条候选审核规则。"
+        parts = [f"共生成 {len(rules)} 条候选审核规则"]
+        if filtered:
+            parts.append(f"（过滤 {len(filtered)} 条重复规则）")
+        summary = "。".join(parts) + "。"
     else:
         summary = "未生成候选审核规则。"
     return {"result": FinalRuleResult(summary=summary, rules=rules)}

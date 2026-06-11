@@ -15,3 +15,6 @@ def disable_real_llm_for_tests(monkeypatch):
     monkeypatch.setenv("DISABLE_REAL_LLM", "1")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+    # 默认关闭过滤和回流节点，测试需要时显式开启
+    monkeypatch.setenv("REVERSE_RULE_FILTER_ENABLED", "0")
+    monkeypatch.setenv("REVERSE_RULE_FEEDBACK_ENABLED", "0")
