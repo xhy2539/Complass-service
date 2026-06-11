@@ -1,13 +1,10 @@
-name: CI/CD
+name: CI
 
 on:
   push:
     branches: [dev, main]
   pull_request:
     branches: [dev, main]
-
-env:
-  COZE_ACCESS_TOKEN: ${{ secrets.COZE_ACCESS_TOKEN }}
 
 jobs:
   ci:
@@ -60,25 +57,3 @@ jobs:
         run: |
           . .venv/bin/activate
           python -c "from app.main import app; print(app.title)"
-
-  deploy:
-    needs: ci
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1
-        with:
-          host: 82.156.132.43
-          username: root
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            set -eux
-            cd /opt/complass-service
-            git checkout -- . 2>/dev/null || true
-            git pull --ff-only
-            sed -i "s/^COZE_ACCESS_TOKEN=.*/COZE_ACCESS_TOKEN=${{ secrets.COZE_ACCESS_TOKEN }}/" .env
-            docker build -t complass-service:latest .
-            docker compose up -d complass-service
-            sleep 5
-            curl -f --max-time 10 --retry 3 --retry-delay 3 http://127.0.0.1:8080/health
