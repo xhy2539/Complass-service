@@ -1,0 +1,84 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+env:
+  COZE_ACCESS_TOKEN: ${{ secrets.COZE_ACCESS_TOKEN }}
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ hashFiles('requirements.txt', 'requirements-dev.txt') }}
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          pip install -r reverse_rule_workflow/requirements.txt
+
+      - name: Lint
+        run: |
+          . .venv/bin/activate
+          ruff check app/ reverse_rule_workflow/app/ rag-service/app/
+          ruff format --check app/ reverse_rule_workflow/app/ rag-service/app/
+
+      - name: Type Check
+        run: |
+          . .venv/bin/activate
+          mypy app/ reverse_rule_workflow/app/ || true
+
+      - name: Test
+        run: |
+          . .venv/bin/activate
+          python -m pytest tests/ -v --tb=short
+          python -m pytest reverse_rule_workflow/tests/ -v --tb=short
+
+      - name: Syntax Check
+        run: |
+          . .venv/bin/activate
+          python -m compileall -q app reverse_rule_workflow/app rag-service/app
+
+      - name: Import Check
+        run: |
+          . .venv/bin/activate
+          python -c "from app.main import app; print(app.title)"
+
+  deploy:
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 82.156.132.43
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -eux
+            cd /opt/complass-service
+            git checkout -- . 2>/dev/null || true
+            git pull --ff-only
+            sed -i "s/^COZE_ACCESS_TOKEN=.*/COZE_ACCESS_TOKEN=${{ secrets.COZE_ACCESS_TOKEN }}/" .env
+            docker build -t complass-service:latest .
+            docker compose up -d complass-service
+            sleep 5
+            curl -f --max-time 10 --retry 3 --retry-delay 3 http://127.0.0.1:8080/health
