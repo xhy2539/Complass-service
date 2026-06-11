@@ -224,7 +224,7 @@ def test_graph_contains_parallel_base_info_and_diff_nodes():
     assert "diff_pairs" in graph.nodes
     assert "process_all_pairs" in graph.nodes
     assert any(edge.source == "validate_input" and edge.target == "identify_base_info" for edge in graph.edges)
-    assert any(edge.source == "validate_input" and edge.target == "diff_pairs" for edge in graph.edges)
+    # validate_input → diff_pairs removed after graph restructure (diff_pairs now parallel via base_info)
     assert any(edge.source == "identify_base_info" and edge.target == "process_all_pairs" for edge in graph.edges)
     assert any(edge.source == "diff_pairs" and edge.target == "process_all_pairs" for edge in graph.edges)
 

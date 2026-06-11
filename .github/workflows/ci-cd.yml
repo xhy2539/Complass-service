@@ -49,7 +49,7 @@ jobs:
         run: |
           . .venv/bin/activate
           python -m pytest tests/ -v --tb=short
-          python -m pytest reverse_rule_workflow/tests/ -v --tb=short
+          cd reverse_rule_workflow && python -m pytest tests/ -v --tb=short
 
       - name: Syntax Check
         run: |
