@@ -199,12 +199,17 @@ class DocumentExporter:
         if not original_paras:
             original_paras = list(doc.paragraphs)
 
-        # 移除原模板中的 tab 分隔键值对（走 _extract_and_strip_tables 写回模板表格）
-        original_paras = [
-            p
-            for p in original_paras
-            if not ("\t" in p.text and len(p.text.split("\t")) == 2)
-        ]
+        # 移除标题前的模板 tab 行：先清空，再从匹配列表剔除
+        title_text = new_paragraphs[0].strip() if new_paragraphs else ""
+        first_body = -1
+        for idx, p in enumerate(original_paras):
+            if p.text.strip() and _text_similarity(p.text.strip(), title_text) > 0.5:
+                first_body = idx
+                break
+        for p in original_paras[:first_body]:
+            _set_para_text(p, "")
+        if first_body > 0:
+            original_paras = original_paras[first_body:]
 
         MATCH_THRESHOLD = 0.35
         LOOKAHEAD = 3
