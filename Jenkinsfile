@@ -153,26 +153,23 @@ pipeline {
                 expression { env.GERRIT_EVENT_TYPE == 'change-merged' }
             }
             steps {
-                withCredentials([string(credentialsId: env.COZE_TOKEN_CREDENTIAL_ID, variable: 'COZE_ACCESS_TOKEN')]) {
-                    sshagent(credentials: [env.DEPLOY_SSH_CREDENTIALS_ID]) {
-                        sh '''
-                            set -eux
+                sshagent(credentials: [env.DEPLOY_SSH_CREDENTIALS_ID]) {
+                    sh '''
+                        set -eux
 
-                            ssh -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" "
-                                set -eux
-                                cd ${DEPLOY_DIR}
-                                git checkout -- . 2>/dev/null || true
-                                git stash clear 2>/dev/null || true
-                                git pull --ff-only
-                                sed -i \"s/^COZE_ACCESS_TOKEN=.*/COZE_ACCESS_TOKEN=${COZE_ACCESS_TOKEN}/\" .env
-                                docker build -t complass-service:latest .
-                                docker compose up -d --build
-                                docker compose ps
-                                sleep 5
-                                curl -f --max-time 10 --retry 3 --retry-delay 3 http://127.0.0.1:8080/health
-                            "
-                        '''
-                    }
+                        ssh -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" "
+                            set -eux
+                            cd ${DEPLOY_DIR}
+                            git checkout -- . 2>/dev/null || true
+                            git stash clear 2>/dev/null || true
+                            git pull --ff-only
+                            docker build -t complass-service:latest .
+                            docker compose up -d --build
+                            docker compose ps
+                            sleep 5
+                            curl -f --max-time 10 --retry 3 --retry-delay 3 http://127.0.0.1:8080/health
+                        "
+                    '''
                 }
                 sh '''
                     curl -s -X POST "https://sctapi.ftqq.com/SCT357126TkY7NT14gipcfiCUmAc7z49Lz.send" -d "title=Jenkins 部署成功" -d "desp=后端服务已部署" >/dev/null || true
