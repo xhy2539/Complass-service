@@ -118,7 +118,9 @@ class DocumentExporter:
 
     @staticmethod
     def _split_preserving_tables(text: str):
-        """将文本按段落分隔拆分，但保持【表格】块完整不拆开。"""
+        """将文本按段落分隔拆分，但保持【表格】块完整不拆开。
+
+        同时去掉紧邻【表格】标记前的 tab 分隔重复内容（后端解析时产生的冗余）。"""
         sep = "\n\n"
         raw_parts = text.split(sep)
         merged = []
@@ -128,9 +130,8 @@ class DocumentExporter:
             if not part:
                 i += 1
                 continue
-            # 如果当前块包含【表格】但表格不完整（没有足够行），尝试合并后续块
             if "【表格】" in part:
-                # 检查是否需要合并后续纯表格数据行（被 \n\n 拆开的表格）
+                # 合并后续被 \n\n 拆散的表格数据行
                 while i + 1 < len(raw_parts):
                     next_part = raw_parts[i + 1].strip()
                     if not next_part:
@@ -142,6 +143,25 @@ class DocumentExporter:
                         i += 1
                     else:
                         break
+                # 前一个块如果是纯 tab 分隔键值对，与表格内容重复，删掉
+                table_cells = {
+                    cell.strip()
+                    for ln in part.split("\n")
+                    if "|" in ln
+                    for cell in ln.split("|")
+                    if cell.strip()
+                }
+                if merged and table_cells:
+                    prev = merged[-1].strip()
+                    prev_lines = prev.split("\n")
+                    if all(
+                        "\t" in ln and len(ln.split("\t")) == 2 for ln in prev_lines
+                    ):
+                        prev_values = {
+                            v.strip() for ln in prev_lines for v in ln.split("\t")
+                        }
+                        if len(table_cells & prev_values) >= len(prev_values) * 0.6:
+                            merged.pop()
                 merged.append(part.strip())
             else:
                 merged.append(part)
