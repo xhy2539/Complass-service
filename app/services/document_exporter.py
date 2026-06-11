@@ -45,22 +45,43 @@ class DocumentExporter:
         style.font.name = "Times New Roman"
         style.font.size = Pt(12)
 
-        lines = text.split("\n")
-        for line in lines:
-            line = line.strip()
-            if not line:
+        parts = DocumentExporter._split_preserving_tables(text) if "【表格】" in text else text.split("\n")
+        for part in parts:
+            part = part.strip()
+            if not part:
                 doc.add_paragraph()
                 continue
-            heading_level = DocumentExporter._detect_heading(line)
-            if heading_level > 0:
-                heading = doc.add_heading(level=heading_level)
-                heading_run = heading.add_run(line)
-                heading_run.font.size = DocumentExporter._get_heading_size(
-                    heading_level
-                )
-            else:
-                p = doc.add_paragraph(line)
-                p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            table = DocumentExporter._parse_table_block(part)
+            if table:
+                headers, rows = table
+                tbl = doc.add_table(rows=1 + len(rows), cols=len(headers))
+                tbl.style = "Table Grid"
+                for ci, header in enumerate(headers):
+                    cell = tbl.rows[0].cells[ci]
+                    cell.text = header
+                    for p in cell.paragraphs:
+                        for run in p.runs:
+                            run.bold = True
+                for ri, row in enumerate(rows):
+                    for ci, cell_text in enumerate(row):
+                        tbl.rows[ri + 1].cells[ci].text = cell_text
+                doc.add_paragraph()
+                continue
+            for line in part.split("\n"):
+                line = line.strip()
+                if not line:
+                    doc.add_paragraph()
+                    continue
+                heading_level = DocumentExporter._detect_heading(line)
+                if heading_level > 0:
+                    heading = doc.add_heading(level=heading_level)
+                    heading_run = heading.add_run(line)
+                    heading_run.font.size = DocumentExporter._get_heading_size(
+                        heading_level
+                    )
+                else:
+                    p = doc.add_paragraph(line)
+                    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
         if title:
             for section in doc.sections:
@@ -75,6 +96,62 @@ class DocumentExporter:
         return buffer
 
     @staticmethod
+    def _parse_table_block(text: str):
+        """解析【表格】标记的文本块，返回 (headers, rows) 或 None。"""
+        TABLE_MARKER = "【表格】"
+        idx = text.find(TABLE_MARKER)
+        if idx < 0:
+            return None
+        after = text[idx + len(TABLE_MARKER):].strip()
+        lines = [ln.strip() for ln in after.split("\n") if ln.strip()]
+        if len(lines) < 2:
+            return None
+        headers = [c.strip() for c in lines[0].split("|")]
+        rows = [[c.strip() for c in ln.split("|")] for ln in lines[1:]]
+        if not headers or any(len(r) != len(headers) for r in rows):
+            return None
+        return (headers, rows)
+
+    @staticmethod
+    def _split_preserving_tables(text: str):
+        """将文本按段落分隔拆分，但保持【表格】块完整不拆开。"""
+        sep = "\n\n"
+        raw_parts = text.split(sep)
+        merged = []
+        i = 0
+        while i < len(raw_parts):
+            part = raw_parts[i].strip()
+            if not part:
+                i += 1
+                continue
+            # 如果当前块包含【表格】但表格不完整（没有足够行），尝试合并后续块
+            if "【表格】" in part:
+                # 计算表格应有的总行数（首行表头 + 数据行），以 | 分隔的行才计入
+                idx = part.find("【表格】")
+                after_marker = part[idx + 4:].strip()
+                table_lines = [l for l in after_marker.split("\n") if l.strip() and "|" in l]
+                # 当前块的表格行数
+                current_table_rows = len(table_lines)
+                # 检查是否需要合并后续块
+                while i + 1 < len(raw_parts):
+                    next_part = raw_parts[i + 1].strip()
+                    if not next_part:
+                        i += 1
+                        continue
+                    # 如果下一块全部由 | 组成（纯表格数据行），合并
+                    next_lines = [l for l in next_part.split("\n") if l.strip()]
+                    if next_lines and all("|" in l for l in next_lines):
+                        part = part + "\n" + raw_parts[i + 1]
+                        i += 1
+                    else:
+                        break
+                merged.append(part.strip())
+            else:
+                merged.append(part)
+            i += 1
+        return merged
+
+    @staticmethod
     def export_text_to_docx_preserve_format(
         original_file_path: str,
         new_text: str,
@@ -86,10 +163,10 @@ class DocumentExporter:
         - 相似度达阈值的段落 → 替换文本，保留格式
         - 在原文档中找不到匹配的新段落 → 追加到文档末尾
         - 在新文本中找不到匹配的旧段落 → 清空文本
+        - 【表格】块 → 渲染为真正的 Word 表格
         """
         doc = Document(original_file_path)
-        sep = "\n\n" if "\n\n" in new_text else "\n"
-        new_paragraphs = [p for p in new_text.split(sep)]
+        new_paragraphs = DocumentExporter._split_preserving_tables(new_text)
         # 只取正文段落，排除表格单元格内的段落
         from docx.oxml.ns import qn
 
@@ -175,7 +252,25 @@ class DocumentExporter:
             ni += 1
 
         for text in extra:
-            if text.strip():
+            if not text.strip():
+                continue
+            table = DocumentExporter._parse_table_block(text)
+            if table:
+                headers, rows = table
+                tbl = doc.add_table(rows=1 + len(rows), cols=len(headers))
+                tbl.style = "Table Grid"
+                for ci, header in enumerate(headers):
+                    cell = tbl.rows[0].cells[ci]
+                    cell.text = header
+                    for p in cell.paragraphs:
+                        for run in p.runs:
+                            run.bold = True
+                for ri, row in enumerate(rows):
+                    for ci, cell_text in enumerate(row):
+                        tbl.rows[ri + 1].cells[ci].text = cell_text
+                # 表格后加空行隔开
+                doc.add_paragraph()
+            else:
                 doc.add_paragraph(text)
 
         buffer = BytesIO()
