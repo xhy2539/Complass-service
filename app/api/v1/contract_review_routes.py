@@ -595,7 +595,10 @@ async def _run_review_task_async(
                     paragraphs_info=paragraphs_info,
                 )
                 # 模糊匹配时，用段落原文替换evidence，确保前端能精确定位
-                if position and position.get("match_strategy") in ("containment_paragraph", "overlap"):
+                if position and position.get("match_strategy") in (
+                    "containment_paragraph",
+                    "overlap",
+                ):
                     evidence = original_text or evidence
                 matched_sentence = find_best_sentence_match(
                     evidence=evidence, sentences_info=sentences_info
