@@ -237,7 +237,11 @@ class DocumentParser:
                         if cell_texts:
                             table_rows.append(" | ".join(cell_texts))
                     if table_rows:
-                        table_text = "【表格】\n" + "\n".join(table_rows)
+                        table_text = (
+                            "[TABLE_START]【表格】\n"
+                            + "\n".join(table_rows)
+                            + "\n[TABLE_END]"
+                        )
                         char_offset += cls._add_paragraph_entry(
                             paragraphs,
                             sentences,
