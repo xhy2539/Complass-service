@@ -18,7 +18,6 @@ import re
 from typing import Any
 
 import httpx
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -197,8 +196,10 @@ def get_json(
     return None
 
 
-def get_embedding(texts: list[str], dim: int = 1024) -> np.ndarray:
+def get_embedding(texts: list[str], dim: int = 1024):
     """文本嵌入，主 provider 失败降级为确定性随机向量。"""
+    import numpy as np
+
     providers = _build_embedding_providers()
 
     if providers:
