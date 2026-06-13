@@ -16,8 +16,6 @@ import threading
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 from app.kb.loader import load_reverse_rule_cases
 from app.kb.retriever import DEFAULT_PERSIST_DIR
 from app.kb.retriever import _cosine
@@ -25,6 +23,8 @@ from app.kb.retriever import embed_text
 from app.kb.retriever import retrieve_reverse_rule_cases
 from app.kb.schema import ReverseRuleCase
 from app.models.reverse_rule import CandidateRuleForDB
+from app.services.model_factory import get_json
+from app.services.model_factory import has_llm
 from app.services.review_perspective import normalize_review_perspective
 
 logger = logging.getLogger(__name__)
@@ -337,10 +337,9 @@ def _filter_by_quality_review(
         logger.info("[Filter 质量审核] 已禁用，跳过")
         return rules, []
 
-    # 检查是否有 API key
-    config = _resolve_judge_config()
-    if not config["api_key"]:
-        logger.info("[Filter 质量审核] 无API key，跳过质量审核")
+    # 检查是否有可用 provider
+    if not has_llm():
+        logger.info("[Filter 质量审核] 无可用LLM provider，跳过质量审核")
         return rules, []
 
     rules_json = json.dumps(
@@ -546,19 +545,6 @@ risk_level_override 仅在认为原始风险等级不当时覆盖（"低"/"中"/
 只输出 JSON 数组，不要其他内容。"""
 
 
-def _resolve_judge_config() -> dict[str, str]:
-    """获取 Judge LLM 配置，复用 MiniMax 环境变量。"""
-    return {
-        "api_key": os.getenv("MINIMAX_API_KEY") or os.getenv("OPENAI_API_KEY", ""),
-        "base_url": (
-            os.getenv("MINIMAX_BASE_URL")
-            or os.getenv("OPENAI_BASE_URL")
-            or "https://api.minimax.io/v1"
-        ),
-        "model": os.getenv("LLM_MODEL_NAME", "MiniMax-M2.7"),
-    }
-
-
 def _slim_rule_for_judge(rule: CandidateRuleForDB) -> dict[str, Any]:
     """精简规则字段供 Judge 审核。"""
     return {
@@ -589,73 +575,15 @@ def _slim_case_for_judge(case: dict[str, Any]) -> dict[str, Any]:
 
 
 def _call_judge(prompt: str) -> list[dict[str, Any]] | None:
-    """调用 MiniMax API 进行批量审核，返回判定结果列表。"""
-    config = _resolve_judge_config()
-    if not config["api_key"]:
-        logger.warning("[Feedback Judge] No API key, rejecting all candidates")
+    """通过模型工厂调用 LLM 进行批量审核。"""
+    if not has_llm():
+        logger.warning("[Feedback Judge] No LLM providers configured")
         return None
 
-    try:
-        with httpx.Client(timeout=30.0) as client:
-            resp = client.post(
-                f"{config['base_url']}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {config['api_key']}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": config["model"],
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0,
-                    "max_tokens": 2048,
-                },
-            )
-            if resp.status_code != 200:
-                logger.warning(
-                    "[Feedback Judge] API returned %d: %s",
-                    resp.status_code,
-                    resp.text[:200],
-                )
-                return None
-
-            body = resp.json()
-            content = body["choices"][0]["message"]["content"]
-
-            # 剥离 <think>...</think> 推理块（MiniMax M3）
-            cleaned = re.sub(
-                r"<think>.*?</think>", "", content, flags=re.DOTALL
-            ).strip()
-
-            # 尝试1: 解析 JSON 数组
-            start = cleaned.find("[")
-            end = cleaned.rfind("]")
-            if start >= 0 and end > start:
-                try:
-                    return json.loads(cleaned[start : end + 1])
-                except json.JSONDecodeError:
-                    pass
-
-            # 尝试2: 解析 JSON Lines（每行一个 JSON 对象）
-            lines = cleaned.split("\n")
-            objects = []
-            for line in lines:
-                line = line.strip()
-                if line.startswith("{") and line.endswith("}"):
-                    try:
-                        objects.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-            if objects:
-                return objects
-
-            logger.warning(
-                "[Feedback Judge] Could not parse JSON from: %s",
-                cleaned[:300],
-            )
-            return None
-    except Exception:
-        logger.exception("[Feedback Judge] API call failed")
-        return None
+    result = get_json(prompt, temperature=0, max_tokens=2048)
+    if result is None:
+        logger.warning("[Feedback Judge] 所有 provider 均失败")
+    return result
 
 
 def _judge_rules(
