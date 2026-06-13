@@ -15,6 +15,7 @@ from app.api.v1.contract_review_api import contract_review_api_router
 from app.api.v1.contract_review_routes import recover_pending_review_tasks
 from app.api.v1.reverse_rule_routes import recover_pending_reverse_rule_tasks
 from app.api.v1.reverse_rule_routes import reverse_rule_candidate_router
+from app.api.v1.reverse_rule_routes import reverse_rule_extract_router
 from app.api.v1.reverse_rule_routes import reverse_rule_router
 from app.core.complass_service_settings import get_complass_service_settings
 from app.models.database_connection import init_db
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
     application.include_router(audit_rules_router)
     application.include_router(reverse_rule_router, prefix="/api/v1")
     application.include_router(reverse_rule_candidate_router, prefix="/api/v1")
+    application.include_router(reverse_rule_extract_router, prefix="/api/v1")
 
     # 👉 挂载飞书回调路由（关键）
     @application.post("/api/feishu/callback")
