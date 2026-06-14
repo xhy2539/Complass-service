@@ -97,6 +97,10 @@ class CandidateRuleForDB(BaseModel):
 class FinalRuleResult(BaseModel):
     summary: str
     rules: list[CandidateRuleForDB] = Field(default_factory=list)
+    generation_mode: str = Field(
+        default="unknown",
+        description="llm | stub | mixed — 标识规则生成是否使用了 LLM",
+    )
 
 
 class CandidateRuleBatch(BaseModel):

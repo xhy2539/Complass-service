@@ -91,6 +91,7 @@ def process_task_async(task_id: str) -> None:
             "included": 0,
             "ignored": 0,
             "pending": len(rules),
+            "generation_mode": result.get("generation_mode", "unknown"),
         }
         pair_name_to_index: dict[str, int] = {}
         for idx, p in enumerate(pairs):

@@ -688,7 +688,27 @@ def _return_result_node(state: ReverseRuleState) -> ReverseRuleState:
         summary = "。".join(parts) + "。"
     else:
         summary = "未生成候选审核规则。"
-    return {"result": FinalRuleResult(summary=summary, rules=rules)}
+
+    # 检测是否走了 STUB 模式
+    llm_count = sum(1 for r in rules if r.traces and r.traces[0].confidence > 0.6)
+    stub_count = len(rules) - llm_count
+    if llm_count > 0 and stub_count == 0:
+        mode = "llm"
+    elif stub_count > 0 and llm_count == 0:
+        mode = "stub"
+        summary += (
+            " 注意：当前规则由模板生成（LLM 服务异常），"
+            "置信度较低，建议人工复核确认后入库。"
+        )
+    elif llm_count > 0 and stub_count > 0:
+        mode = "mixed"
+        summary += f" 注意：{stub_count} 条规则由模板生成，建议人工复核。"
+    else:
+        mode = "unknown"
+
+    return {
+        "result": FinalRuleResult(summary=summary, rules=rules, generation_mode=mode)
+    }
 
 
 def _generate_rules_with_stub(
@@ -937,77 +957,46 @@ def _parse_rule_batch_from_text(
     pair: ContractPair | None = None,
     diff_result: DiffResult | None = None,
 ) -> CandidateRuleBatch:
-    logger = logging.getLogger(__name__)
+    # 剥离 <think> 推理块：从最后一个 </think> 之后取内容
+    think_end = text.rfind("</think>")
+    if think_end >= 0:
+        cleaned = text[think_end + 8 :].strip()
+    else:
+        cleaned = text.strip()
 
-    # 剥离 <think> 推理块、markdown 代码块
-    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    # 剥离 ```json Markdown 代码块
     fenced = re.search(
         r"```(?:json)?\s*(.*?)```", cleaned, flags=re.DOTALL | re.IGNORECASE
     )
     if fenced:
         cleaned = fenced.group(1).strip()
 
-    # 提取所有可能的 JSON 对象（最外层 { 和 } 之间的内容）
+    # 使用标准库 JSONDecoder 稳健解析
+    decoder = json.JSONDecoder()
     raw_rules: list[dict[str, Any]] = []
-    depth = 0
-    start_idx = -1
-    for i, ch in enumerate(cleaned):
-        if ch == "{":
-            if depth == 0:
-                start_idx = i
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0 and start_idx >= 0:
-                obj_text = cleaned[start_idx : i + 1]
-                try:
-                    obj = json.loads(obj_text)
-                    if isinstance(obj, dict):
-                        if "risk_name" in obj or "review_module" in obj:
-                            raw_rules.append(obj)
-                        elif "rules" in obj and isinstance(obj["rules"], list):
-                            for inner in obj["rules"]:
-                                if isinstance(inner, dict):
-                                    raw_rules.append(inner)
-                except json.JSONDecodeError:
-                    pass
-                start_idx = -1
-
-    # 也尝试直接解析顶层 JSON 数组 [{...}, ...]
-    if not raw_rules:
+    pos = 0
+    while pos < len(cleaned):
+        # 跳过空白和非 JSON 字符
+        while pos < len(cleaned) and cleaned[pos] not in "{[":
+            pos += 1
+        if pos >= len(cleaned):
+            break
         try:
-            array_start = cleaned.find("[")
-            array_end = cleaned.rfind("]")
-            if array_start >= 0 and array_end > array_start:
-                arr = json.loads(cleaned[array_start : array_end + 1])
-                if isinstance(arr, list):
-                    for item in arr:
-                        if isinstance(item, dict):
-                            raw_rules.append(item)
+            obj, end = decoder.raw_decode(cleaned, pos)
+            pos = end
+            if isinstance(obj, dict):
+                if "risk_name" in obj or "review_module" in obj:
+                    raw_rules.append(obj)
+                elif "rules" in obj and isinstance(obj["rules"], list):
+                    for inner in obj["rules"]:
+                        if isinstance(inner, dict):
+                            raw_rules.append(inner)
+            elif isinstance(obj, list):
+                for item in obj:
+                    if isinstance(item, dict):
+                        raw_rules.append(item)
         except json.JSONDecodeError:
-            pass
-
-    # 最后尝试传统方法
-    if not raw_rules:
-        try:
-            object_start = cleaned.find("{")
-            array_start = cleaned.find("[")
-            starts = [idx for idx in (object_start, array_start) if idx >= 0]
-            start = min(starts) if starts else -1
-            end = max(cleaned.rfind("}"), cleaned.rfind("]"))
-            if start >= 0 and end >= start:
-                payload = json.loads(cleaned[start : end + 1])
-                if isinstance(payload, list):
-                    raw_rules = payload
-                elif isinstance(payload, dict) and "rules" in payload:
-                    raw_rules = payload.get("rules") or []
-                elif isinstance(payload, dict):
-                    raw_rules = [payload]
-        except (json.JSONDecodeError, ValueError):
-            logger.warning(
-                "[ReverseRule] JSON parse failed, text preview: %s",
-                cleaned[:200],
-            )
+            pos += 1
 
     rules: list[CandidateRuleForDB] = []
     for raw_rule in raw_rules:
