@@ -1100,9 +1100,7 @@ def _coerce_llm_rule_data(
 
     if data.get("traces") and pair is not None and diff_result is not None:
         data["traces"] = [
-            _coerce_trace_source_diff_id(
-                trace, pair, diff_result, data.get("review_module")
-            )
+            _coerce_llm_trace(trace, pair, diff_result, data.get("review_module"))
             for trace in data.get("traces", [])
             if isinstance(trace, dict)
         ]
@@ -1121,6 +1119,23 @@ def _coerce_llm_rule_data(
                     "confidence": 0.72,
                 }
             ]
+    return data
+
+
+def _coerce_llm_trace(
+    trace: dict[str, Any],
+    pair: ContractPair,
+    diff_result: DiffResult,
+    review_module: str | None = None,
+) -> dict[str, Any]:
+    """补全 LLM 返回的 trace 缺失字段：pair_id, diff_summary, confidence。"""
+    data = dict(trace)
+    data.setdefault("pair_id", pair.pair_id)
+    data.setdefault("diff_summary", "")
+    if "confidence" not in data:
+        data["confidence"] = 0.72
+    # 也补 source_diff_id
+    data = _coerce_trace_source_diff_id(data, pair, diff_result, review_module)
     return data
 
 
