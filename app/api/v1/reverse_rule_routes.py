@@ -30,6 +30,7 @@ from app.schemas.reverse_rule import TaskResponse
 from app.services.document_parser import DocumentParser
 from app.services.reverse_rule_task_service import import_candidates
 from app.services.reverse_rule_task_service import process_task_async
+from app.services.reverse_rule_task_service import run_reverse_rule_workflow
 
 reverse_rule_router = APIRouter(prefix="/reverse-rule-tasks", tags=["规则逆向解析"])
 reverse_rule_candidate_router = APIRouter(
@@ -460,3 +461,34 @@ def delete_reverse_rule_task(
     db.delete(task)
     db.commit()
     return {"detail": "任务已删除"}
+
+
+# --- 直接提取端点（无需任务管理） ---
+
+reverse_rule_extract_router = APIRouter(prefix="/reverse-rule", tags=["规则逆向解析"])
+
+
+@reverse_rule_extract_router.post("/extract")
+def extract_reverse_rules(contract_pairs: list[dict]) -> dict:
+    """直接提交合同对进行逆向规则提取。
+
+    contract_pairs: [{"before_text": "...", "after_text": "...",
+                       "contract_type": "...", "review_role": "..."}]
+    返回: {"summary": "...", "rules": [...], "filtered_out": [...], "feedback_result": {...}}
+    """
+    if not 1 <= len(contract_pairs) <= 5:
+        raise HTTPException(
+            status_code=400, detail="contract_pairs 必须包含 1-5 组合同"
+        )
+    for pair in contract_pairs:
+        if not pair.get("before_text") or not pair.get("after_text"):
+            raise HTTPException(
+                status_code=400, detail="before_text 和 after_text 不能为空"
+            )
+
+    try:
+        return run_reverse_rule_workflow(contract_pairs)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
