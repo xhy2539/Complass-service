@@ -937,30 +937,60 @@ def _parse_rule_batch_from_text(
     pair: ContractPair | None = None,
     diff_result: DiffResult | None = None,
 ) -> CandidateRuleBatch:
+    logger = logging.getLogger(__name__)
+
+    # 剥离 <think> 推理块、markdown 代码块
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     fenced = re.search(
         r"```(?:json)?\s*(.*?)```", cleaned, flags=re.DOTALL | re.IGNORECASE
     )
     if fenced:
         cleaned = fenced.group(1).strip()
-    else:
-        object_start = cleaned.find("{")
-        array_start = cleaned.find("[")
-        starts = [index for index in (object_start, array_start) if index >= 0]
-        start = min(starts) if starts else -1
-        end = max(cleaned.rfind("}"), cleaned.rfind("]"))
-        if start >= 0 and end >= start:
-            cleaned = cleaned[start : end + 1]
 
-    payload = json.loads(cleaned)
-    if isinstance(payload, list):
-        raw_rules = payload
-    elif isinstance(payload, dict) and "rules" in payload:
-        raw_rules = payload.get("rules") or []
-    elif isinstance(payload, dict):
-        raw_rules = [payload]
-    else:
-        raw_rules = []
+    # 提取所有可能的 JSON 对象（最外层 { 和 } 之间的内容）
+    raw_rules: list[dict[str, Any]] = []
+    depth = 0
+    start_idx = -1
+    for i, ch in enumerate(cleaned):
+        if ch == "{":
+            if depth == 0:
+                start_idx = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start_idx >= 0:
+                obj_text = cleaned[start_idx : i + 1]
+                try:
+                    obj = json.loads(obj_text)
+                    if isinstance(obj, dict) and (
+                        "risk_name" in obj or "review_module" in obj
+                    ):
+                        raw_rules.append(obj)
+                except json.JSONDecodeError:
+                    pass
+                start_idx = -1
+
+    # 如果提取不到，尝试传统方法
+    if not raw_rules:
+        try:
+            object_start = cleaned.find("{")
+            array_start = cleaned.find("[")
+            starts = [idx for idx in (object_start, array_start) if idx >= 0]
+            start = min(starts) if starts else -1
+            end = max(cleaned.rfind("}"), cleaned.rfind("]"))
+            if start >= 0 and end >= start:
+                payload = json.loads(cleaned[start : end + 1])
+                if isinstance(payload, list):
+                    raw_rules = payload
+                elif isinstance(payload, dict) and "rules" in payload:
+                    raw_rules = payload.get("rules") or []
+                elif isinstance(payload, dict):
+                    raw_rules = [payload]
+        except (json.JSONDecodeError, ValueError):
+            logger.warning(
+                "[ReverseRule] JSON parse failed, text preview: %s",
+                cleaned[:200],
+            )
 
     rules: list[CandidateRuleForDB] = []
     for raw_rule in raw_rules:
