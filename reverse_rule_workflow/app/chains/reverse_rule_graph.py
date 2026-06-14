@@ -962,15 +962,32 @@ def _parse_rule_batch_from_text(
                 obj_text = cleaned[start_idx : i + 1]
                 try:
                     obj = json.loads(obj_text)
-                    if isinstance(obj, dict) and (
-                        "risk_name" in obj or "review_module" in obj
-                    ):
-                        raw_rules.append(obj)
+                    if isinstance(obj, dict):
+                        if "risk_name" in obj or "review_module" in obj:
+                            raw_rules.append(obj)
+                        elif "rules" in obj and isinstance(obj["rules"], list):
+                            for inner in obj["rules"]:
+                                if isinstance(inner, dict):
+                                    raw_rules.append(inner)
                 except json.JSONDecodeError:
                     pass
                 start_idx = -1
 
-    # 如果提取不到，尝试传统方法
+    # 也尝试直接解析顶层 JSON 数组 [{...}, ...]
+    if not raw_rules:
+        try:
+            array_start = cleaned.find("[")
+            array_end = cleaned.rfind("]")
+            if array_start >= 0 and array_end > array_start:
+                arr = json.loads(cleaned[array_start : array_end + 1])
+                if isinstance(arr, list):
+                    for item in arr:
+                        if isinstance(item, dict):
+                            raw_rules.append(item)
+        except json.JSONDecodeError:
+            pass
+
+    # 最后尝试传统方法
     if not raw_rules:
         try:
             object_start = cleaned.find("{")
@@ -1010,8 +1027,42 @@ def _coerce_llm_rule_data(
     diff_result: DiffResult | None,
 ) -> dict[str, Any]:
     data = dict(raw_rule)
-    if "risk_name" not in data and "rule_name" in data:
-        data["risk_name"] = data["rule_name"]
+
+    # ── 字段名映射：MiniMax M3 可能输出非标准字段名 ──
+    # risk_name 推导优先级: risk_name > rule_name > rule_type > description前段
+    if "risk_name" not in data:
+        if "rule_name" in data:
+            data["risk_name"] = data["rule_name"]
+        elif "rule_type" in data:
+            data["risk_name"] = data["rule_type"]
+        elif "description" in data:
+            # 用 description 的前 50 字做 risk_name
+            desc = str(data["description"])
+            data["risk_name"] = desc[:50]
+    # check_point 推导: check_point > description > recommendation
+    if "check_point" not in data and "description" in data:
+        data["check_point"] = str(data["description"])
+    # suggestion_template 推导: suggestion_template > recommendation
+    if "suggestion_template" not in data and "recommendation" in data:
+        data["suggestion_template"] = str(data["recommendation"])
+    # trigger_condition 推导: trigger_condition > trigger
+    if "trigger_condition" not in data and "trigger" in data:
+        data["trigger_condition"] = str(data["trigger"])
+    # 风险等级标准化: "有利" → "低", "高"→"高", "中"→"中"
+    risk = data.get("default_risk_level") or data.get("risk_level") or ""
+    if risk in ("有利", "低", "low"):
+        data["default_risk_level"] = "低"
+    elif risk in ("高", "high"):
+        data["default_risk_level"] = "高"
+    else:
+        data["default_risk_level"] = "中"
+    # example_clause: 优先修改前原文
+    if "example_clause" not in data:
+        clause = _best_trace_clause(diff_result, data.get("review_module"))
+        if clause is not None:
+            data["example_clause"] = clause.before or clause.after
+    data.setdefault("example_clause", "")
+
     if isinstance(data.get("contract_type"), list):
         data["contract_type"] = (
             data["contract_type"][0] if data["contract_type"] else "通用合同"
@@ -1022,7 +1073,6 @@ def _coerce_llm_rule_data(
         or data.get("review_role")
         or (pair.review_role if pair else None)
     )
-    data.setdefault("default_risk_level", "中")
 
     if data.get("traces") and pair is not None and diff_result is not None:
         data["traces"] = [
