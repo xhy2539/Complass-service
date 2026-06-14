@@ -1028,40 +1028,64 @@ def _coerce_llm_rule_data(
 ) -> dict[str, Any]:
     data = dict(raw_rule)
 
-    # ── 字段名映射：MiniMax M3 可能输出非标准字段名 ──
-    # risk_name 推导优先级: risk_name > rule_name > rule_type > description前段
+    # ── 字段名映射：MiniMax M3 每次输出字段名都不同 ──
+    # risk_name: 从任何描述性字段推导
     if "risk_name" not in data:
-        if "rule_name" in data:
-            data["risk_name"] = data["rule_name"]
-        elif "rule_type" in data:
-            data["risk_name"] = data["rule_type"]
-        elif "description" in data:
-            # 用 description 的前 50 字做 risk_name
-            desc = str(data["description"])
-            data["risk_name"] = desc[:50]
-    # check_point 推导: check_point > description > recommendation
-    if "check_point" not in data and "description" in data:
-        data["check_point"] = str(data["description"])
-    # suggestion_template 推导: suggestion_template > recommendation
-    if "suggestion_template" not in data and "recommendation" in data:
-        data["suggestion_template"] = str(data["recommendation"])
-    # trigger_condition 推导: trigger_condition > trigger
-    if "trigger_condition" not in data and "trigger" in data:
-        data["trigger_condition"] = str(data["trigger"])
-    # 风险等级标准化: "有利" → "低", "高"→"高", "中"→"中"
-    risk = data.get("default_risk_level") or data.get("risk_level") or ""
-    if risk in ("有利", "低", "low"):
+        for key in ("rule_name", "rule_type", "risk_type", "name"):
+            if key in data:
+                data["risk_name"] = str(data[key])
+                break
+        else:
+            # 从 description/rule_description 截取前 50 字
+            for key in ("rule_description", "description", "desc"):
+                if key in data:
+                    data["risk_name"] = str(data[key])[:50]
+                    break
+            else:
+                data["risk_name"] = data.get("review_module", "通用") + "规则"
+    # check_point: 从描述性字段推导
+    if "check_point" not in data:
+        for key in ("rule_description", "description", "check", "desc"):
+            if key in data:
+                data["check_point"] = str(data[key])
+                break
+    # suggestion_template: 从建议性字段推导
+    if "suggestion_template" not in data:
+        for key in ("suggestion", "recommendation", "advice", "suggest"):
+            if key in data:
+                data["suggestion_template"] = str(data[key])
+                break
+    # trigger_condition: 从触发条件字段推导
+    if "trigger_condition" not in data:
+        for key in ("trigger", "trigger_condition", "condition", "when"):
+            if key in data:
+                data["trigger_condition"] = str(data[key])
+                break
+        if "trigger_condition" not in data:
+            data["trigger_condition"] = (
+                f"合同{data.get('review_module', '')}条款发生实质性修改时触发"
+            )
+    # 风险等级标准化
+    risk = (
+        data.get("default_risk_level")
+        or data.get("risk_level")
+        or data.get("level")
+        or ""
+    )
+    risk_lower = str(risk).lower()
+    if any(w in risk_lower for w in ("有利", "低", "low", "有利变更", "中性")):
         data["default_risk_level"] = "低"
-    elif risk in ("高", "high"):
+    elif any(w in risk_lower for w in ("高", "high", "严重")):
         data["default_risk_level"] = "高"
     else:
         data["default_risk_level"] = "中"
-    # example_clause: 优先修改前原文
+    # example_clause: 从 diff 补
     if "example_clause" not in data:
-        clause = _best_trace_clause(diff_result, data.get("review_module"))
-        if clause is not None:
-            data["example_clause"] = clause.before or clause.after
-    data.setdefault("example_clause", "")
+        data["example_clause"] = ""
+        if diff_result is not None:
+            clause = _best_trace_clause(diff_result, data.get("review_module"))
+            if clause is not None:
+                data["example_clause"] = clause.before or clause.after
 
     if isinstance(data.get("contract_type"), list):
         data["contract_type"] = (
